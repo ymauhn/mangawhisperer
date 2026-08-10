@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mangawhisperer"
+version = "0.1.0"
+description = "Narração imersiva multi-voz de mangás em PT-BR para leitores cegos — pipeline agêntico de visão, roteirização LLM e síntese de voz."
+readme = "README.md"
+authors = [{ name = "ymauhn" }]
+requires-python = ">=3.10"
+
+[project.urls]
+Repository = "https://github.com/ymauhn/mangawhisperer"
+dependencies = [
+    "pydantic>=2.5",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+engines = [
+    "pymupdf>=1.24",
+    "opencv-python-headless>=4.9",
+    "easyocr>=1.7",
+    "pillow>=10.1",
+]
+vlm = [
+    "anthropic>=0.92",
+]
+vlm-api = [
+    "openai>=1.60",
+]
+ui = [
+    "gradio>=4.44",
+]
+# transformers is pinned <5 across extras: coqui-tts <=0.27.5 imports the
+# removed-in-5.1 `isin_mps_friendly` (idiap/coqui-ai-TTS#558) and declares
+# no upper bound; 4.57.x is the confirmed-working line and fully covers
+# Qwen2.5-VL (needs >=4.49).
+vlm-local = [
+    "transformers>=4.49,<5",
+    "accelerate>=0.30",
+    "qwen-vl-utils>=0.0.8",
+    "bitsandbytes>=0.43",
+]
+tts = [
+    "coqui-tts[codec]>=0.27.5",  # [codec] -> torchcodec, required by torch>=2.9 audio IO
+    "transformers>=4.57,<5",
+]
+tts-edge = [
+    "edge-tts>=7.0",
+]
+audio-tagging = [
+    "transformers>=4.49,<5",  # CLAP zero-shot pipeline (laion/larger_clap_general)
+]
+
+[tool.setuptools.packages.find]
+include = ["mangawhisperer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = '-ra -m "not realmodels"'
+markers = [
+    "realmodels: downloads/runs real model weights (EasyOCR); run with -m realmodels",
+]

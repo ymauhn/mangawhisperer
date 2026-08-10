@@ -1,0 +1,28 @@
+# ── Conteúdo protegido por copyright: NUNCA versionar ─────────────
+# Mangás (PDFs) e qualquer áudio gerado a partir deles (obra derivada).
+data_berserk_samples/
+workspace/
+workspace_ui/
+workspace_full/
+*.pdf
+
+# ── Ambiente e caches ──────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# ── Assets recriáveis por script (scripts/download_sfx.py etc.) ────
+assets/sfx/_packs/
+assets/sfx/_normalized/
+
+# ── Segredos e configs locais ──────────────────────────────────────
+.env
+*.key
+
+# ── SO/editor ──────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
