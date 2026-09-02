@@ -26,9 +26,9 @@ from pathlib import Path
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
+from mangawhisperer.constants import AUDIO_SAMPLE_RATE as TARGET_RATE
 
-TARGET_RATE = 24000  # matches XTTSv2 output
+logger = logging.getLogger(__name__)
 _SUPPORTED = (".wav", ".mp3", ".ogg", ".flac")
 _GAIN = 0.75  # effects slightly under narration level
 

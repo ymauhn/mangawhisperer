@@ -12,6 +12,11 @@ from __future__ import annotations
 import wave
 from pathlib import Path
 
+from mangawhisperer.constants import (
+    AUDIO_CHANNELS as CHANNELS,
+    AUDIO_SAMPLE_RATE as SAMPLE_RATE,
+    AUDIO_SAMPLE_WIDTH_BYTES as SAMPLE_WIDTH_BYTES,
+)
 from mangawhisperer.interfaces import (
     AudioStitcher,
     Image,
@@ -19,10 +24,6 @@ from mangawhisperer.interfaces import (
     VisionLanguageEngine,
 )
 from mangawhisperer.models import AudioSegmentMetadata, ContextualizedBlock, SpeechBubble
-
-SAMPLE_RATE = 22050
-SAMPLE_WIDTH_BYTES = 2  # 16-bit PCM
-CHANNELS = 1
 
 
 def _write_silence(path: Path, duration_ms: int) -> None:

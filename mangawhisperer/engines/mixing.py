@@ -22,13 +22,12 @@ from pathlib import Path
 
 import numpy as np
 
+from mangawhisperer.constants import AUDIO_SAMPLE_RATE as SAMPLE_RATE
 from mangawhisperer.engines.sfx import read_audio, resample_audio
 from mangawhisperer.interfaces import AudioStitcher
 from mangawhisperer.models import AudioSegmentMetadata
 
 logger = logging.getLogger(__name__)
-
-SAMPLE_RATE = 24000  # pipeline-wide narration rate (XTTS output)
 
 
 class MixingStitcher(AudioStitcher):

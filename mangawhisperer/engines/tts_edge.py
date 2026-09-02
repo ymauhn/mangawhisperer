@@ -21,14 +21,13 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from mangawhisperer.constants import AUDIO_SAMPLE_RATE as TARGET_RATE
 from mangawhisperer.engines.sfx import read_audio, resample_audio
 from mangawhisperer.engines.tts import normalize_for_tts
 from mangawhisperer.interfaces import MultiSpeakerTTSEngine
 from mangawhisperer.models import AudioSegmentMetadata, ContextualizedBlock
 
 logger = logging.getLogger(__name__)
-
-TARGET_RATE = 24000
 
 VoiceSpec = tuple[str, int, int]  # (voice id, rate offset %, pitch offset Hz)
 

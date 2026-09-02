@@ -1,40 +1,41 @@
 """MangaWhisperer — interface web (Gradio).
 
 Duas abas:
-* **Narração** — upload do PDF, provedor VLM (Qwen API, OpenAI, Kimi,
-  Anthropic, Qwen local ou passthrough), estilo, sonoplastia, revisão,
-  mixagem (BGM + volumes) e player com o áudio final.
-* **Biblioteca de sons** — upload de efeitos próprios com sugestão
-  automática de tags via CLAP (zero-shot, local).
+* **Narração** — upload do PDF, provedor VLM, estilo, sonoplastia, revisão,
+  mixagem (BGM + volumes) e player com o áudio final. Toda a montagem vem de
+  `mangawhisperer.config.build_pipeline` (a mesma do CLI).
+* **Biblioteca de sons** — upload de efeitos próprios com sugestão automática
+  de tags via CLAP (zero-shot, local).
 
     python app.py            # abre em http://127.0.0.1:7860
 """
 
 from __future__ import annotations
 
-import functools
-import json
 import os
 from pathlib import Path
 
 import gradio as gr
 
-from mangawhisperer.device import cuda_report
-from mangawhisperer.engines.factory import ALL_PROVIDERS, create_reviewer, create_vlm_engine
-from mangawhisperer.engines.layout import ClassicalLayoutParser
-from mangawhisperer.engines.mixing import MixingStitcher
-from mangawhisperer.engines.ocr import EasyOCREngine
-from mangawhisperer.engines.pdf import PyMuPDFPageExtractor
+from mangawhisperer.config import (
+    PROJECT_ROOT,
+    HardwareProfile,
+    PipelineConfig,
+    PipelineResources,
+    build_pipeline,
+)
+from mangawhisperer.engines.factory import ALL_PROVIDERS
 from mangawhisperer.engines.sfx import SFXLibrary
-from mangawhisperer.engines.styles import STYLES, get_style
-from mangawhisperer.engines.tts import DEFAULT_CAST_VOICES, XTTSEngine
+from mangawhisperer.engines.styles import STYLES
 from mangawhisperer.engines.vlm_api import PROVIDER_PRESETS
-from mangawhisperer.orchestrator import MangaAudioOrchestrator, slugify
+from mangawhisperer.reporting import load_script, script_markdown
 
-WORKSPACE_ROOT = Path("workspace_ui")
-SFX_LIBRARY = SFXLibrary(Path(__file__).resolve().parent / "assets" / "sfx")
-BGM_DIR = Path(__file__).resolve().parent / "assets" / "bgm"
+WORKSPACE_ROOT = PROJECT_ROOT / "workspace_ui"
+SFX_LIBRARY = SFXLibrary(PROJECT_ROOT / "assets" / "sfx")
+BGM_DIR = PROJECT_ROOT / "assets" / "bgm"
 AUDIO_TYPES = [".wav", ".mp3", ".ogg", ".flac"]
+HARDWARE = HardwareProfile.detect()
+RESOURCES = PipelineResources()  # OCR e XTTS carregam uma vez e são reaproveitados
 
 
 def bgm_choices() -> list[str]:
@@ -42,42 +43,15 @@ def bgm_choices() -> list[str]:
     return ["off", *tracks]
 
 
-def bgm_path_for(name: str):
-    if not name or name == "off":
-        return None
-    matches = list(BGM_DIR.glob(f"{name}.*"))
-    return matches[0] if matches else None
-
-
-# Heavy local models load once and are reused across requests.
-layout_parser = ClassicalLayoutParser()
-ocr_engine = EasyOCREngine()
-tts_engine = XTTSEngine()
-
-
-@functools.lru_cache(maxsize=8)
-def _local_qwen_engine(sfx_tags: tuple, sfx_intensity: int, style_addendum: str):
-    return create_vlm_engine(
-        "qwen-local", sfx_tags=sfx_tags, sfx_intensity=sfx_intensity,
-        style_addendum=style_addendum,
+def _apply_api_key(provider: str, api_key: str) -> None:
+    key = api_key.strip()
+    if not key:
+        return
+    env = "ANTHROPIC_API_KEY" if provider == "anthropic" else (
+        PROVIDER_PRESETS[provider].api_key_env if provider in PROVIDER_PRESETS else None
     )
-
-
-def _vlm_for(provider: str, model: str, api_key: str, sfx_tags: tuple,
-             sfx_intensity: int, style_addendum: str):
-    model = model.strip() or None
-    if provider == "qwen-local":
-        return _local_qwen_engine(sfx_tags, sfx_intensity, style_addendum)
-    if api_key.strip():
-        env = "ANTHROPIC_API_KEY" if provider == "anthropic" else (
-            PROVIDER_PRESETS[provider].api_key_env if provider in PROVIDER_PRESETS else None
-        )
-        if env:
-            os.environ[env] = api_key.strip()
-    return create_vlm_engine(
-        provider, model=model, sfx_tags=sfx_tags, sfx_intensity=sfx_intensity,
-        style_addendum=style_addendum,
-    )
+    if env:
+        os.environ[env] = key
 
 
 def narrate(pdf_file, provider, model, api_key, style_name, tts_backend, start_page,
@@ -85,70 +59,39 @@ def narrate(pdf_file, provider, model, api_key, style_name, tts_backend, start_p
             gain_voice, gain_sfx, gain_bgm, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("Envie um PDF primeiro.")
-    pdf_path = Path(pdf_file)
-    start, pages = int(start_page), int(num_pages)
-    style = get_style(style_name)
-    intensity = int(sfx_intensity) if use_sfx else 0
-    sfx_library = SFX_LIBRARY if (intensity > 0 and SFX_LIBRARY.tags()) else None
-    sfx_tags = tuple(sfx_library.tags()) if sfx_library else ()
+    _apply_api_key(provider, api_key)
 
-    progress(0.05, desc="Preparando pipeline...")
-    if tts_backend == "edge":
-        from mangawhisperer.engines.tts_factory import create_tts_engine
-
-        active_tts = create_tts_engine(
-            "edge", speed=style.tts_speed, extra_synthesis_kwargs=style.synthesis_kwargs
-        )
-    else:
-        tts_engine.configure(speed=style.tts_speed, extra_synthesis_kwargs=style.synthesis_kwargs)
-        active_tts = tts_engine
-    vlm_engine = _vlm_for(provider, model, api_key, sfx_tags, intensity, style.prompt_addendum)
-    preflight = getattr(vlm_engine, "preflight", None)
-    if callable(preflight):
-        try:
-            preflight()
-        except RuntimeError as exc:
-            raise gr.Error(str(exc)) from exc
-
-    orchestrator = MangaAudioOrchestrator(
-        page_extractor=PyMuPDFPageExtractor(dpi=200, first_page=start, max_pages=pages),
-        layout_parser=layout_parser,
-        ocr_engine=ocr_engine,
-        vlm_engine=vlm_engine,
-        tts_engine=active_tts,
-        stitcher=MixingStitcher(
-            bgm_path=bgm_path_for(bgm_name),
-            voice_gain=float(gain_voice),
-            sfx_gain=float(gain_sfx),
-            bgm_gain=float(gain_bgm),
-        ),
+    config = PipelineConfig(
+        pdf_path=Path(pdf_file),
+        first_page=int(start_page),
+        max_pages=int(num_pages),
         workspace_root=WORKSPACE_ROOT,
         resume=False,  # cada clique é uma execução nova e explícita
-        sfx_library=sfx_library,
-        sfx_intensity=intensity,
+        vlm_provider=provider,
+        vlm_model=model.strip() or None,
+        review=bool(use_review),
+        style=style_name,
+        tts_backend=tts_backend,
         announce_speakers=bool(announce),
-        reviewer=(
-            create_reviewer(provider, model=model.strip() or None,
-                            known_characters=tuple(DEFAULT_CAST_VOICES), sfx_tags=sfx_tags)
-            if use_review else None
-        ),
+        sfx_intensity=int(sfx_intensity) if use_sfx else 0,
+        bgm=bgm_name or "off",
+        gain_voice=float(gain_voice),
+        gain_sfx=float(gain_sfx),
+        gain_bgm=float(gain_bgm),
+        hardware=HARDWARE,
     )
 
-    progress(0.15, desc="Narrando (layout -> OCR -> VLM -> TTS)...")
-    final_path = orchestrator.run(pdf_path)
+    progress(0.05, desc="Montando o pipeline...")
+    try:
+        pipeline = build_pipeline(config, RESOURCES)
+    except (RuntimeError, FileNotFoundError) as exc:
+        raise gr.Error(str(exc)) from exc
 
-    script_path = WORKSPACE_ROOT / slugify(pdf_path.stem) / "script" / "panels.json"
-    panels = json.loads(script_path.read_text(encoding="utf-8"))
-    lines = []
-    for panel in panels:
-        for block in panel["blocks"]:
-            icon = "🗣️" if block["is_speech"] else "🎬"
-            sfx_note = f" 🔊`{block['sfx']}`" if block.get("sfx") else ""
-            lines.append(f"- {icon} **{block['speaker_id']}**{sfx_note}: {block['text']}")
-    script_md = "\n".join(lines) or "*Nenhum texto encontrado nas páginas selecionadas.*"
-
+    progress(0.15, desc="Narrando (layout -> OCR -> VLM -> revisão -> TTS -> mix)...")
+    final_path = pipeline.run()
+    script_md = script_markdown(load_script(config.script_path))
     progress(1.0, desc="Pronto!")
-    return str(final_path), script_md
+    return str(final_path), script_md, "\n".join(pipeline.report)
 
 
 def analyze_uploads(files, progress=gr.Progress()):
@@ -171,7 +114,7 @@ def analyze_uploads(files, progress=gr.Progress()):
             else:
                 rows.append([path.name, "", "sem sugestão confiável — digite a tag", str(path)])
     finally:
-        tagger.release()
+        tagger.release()  # nunca deixar o CLAP residente ao lado do XTTS
     return rows
 
 
@@ -187,16 +130,14 @@ def add_to_library(rows):
     if not added:
         return "*Nada adicionado — preencha a coluna de tag dos arquivos desejados.*"
     tags = SFX_LIBRARY.tags()
-    return (
-        "**Adicionados:**\n" + "\n".join(f"- {item}" for item in added)
-        + f"\n\nBiblioteca agora tem **{len(tags)} tags**: {', '.join(tags)}"
-    )
+    return ("**Adicionados:**\n" + "\n".join(f"- {item}" for item in added)
+            + f"\n\nBiblioteca agora tem **{len(tags)} tags**: {', '.join(tags)}")
 
 
 with gr.Blocks(title="MangaWhisperer") as demo:
     gr.Markdown("# 🎧 MangaWhisperer\nNarração imersiva multi-voz de mangás em PT-BR "
                 "para leitores com deficiência visual.")
-    gr.Markdown(f"**GPU:** {cuda_report()}")
+    gr.Markdown(f"**GPU:** {HARDWARE.describe()}")
 
     with gr.Tab("🎙️ Narração"):
         with gr.Row():
@@ -252,6 +193,7 @@ with gr.Blocks(title="MangaWhisperer") as demo:
             with gr.Column():
                 audio_out = gr.Audio(label="Áudio final", type="filepath")
                 script_out = gr.Markdown(label="Roteiro gerado")
+                report_out = gr.Textbox(label="Configuração usada", lines=7, interactive=False)
 
     with gr.Tab("📚 Biblioteca de sons"):
         gr.Markdown(
@@ -274,11 +216,11 @@ with gr.Blocks(title="MangaWhisperer") as demo:
         inputs=[pdf_in, provider_in, model_in, key_in, style_in, tts_in, start_in, pages_in,
                 sfx_in, sfx_intensity_in, announce_in, review_in, bgm_in,
                 gain_voice_in, gain_sfx_in, gain_bgm_in],
-        outputs=[audio_out, script_out],
+        outputs=[audio_out, script_out, report_out],
     )
     analyze_btn.click(analyze_uploads, inputs=[uploads_in], outputs=[suggestions_table])
     add_btn.click(add_to_library, inputs=[suggestions_table], outputs=[library_status])
 
 if __name__ == "__main__":
     print("Abrindo o MangaWhisperer no navegador... (Ctrl+C para encerrar)")
-    demo.launch(inbrowser=True)  # abre o navegador automaticamente
+    demo.launch(inbrowser=True)
