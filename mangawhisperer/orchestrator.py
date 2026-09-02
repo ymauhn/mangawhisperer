@@ -169,14 +169,17 @@ class MangaAudioOrchestrator:
 
         panels = self._resume_script(workspace)
         script_resumed = panels is not None
-        if panels is None:
-            page_paths = self._page_extractor.extract_pages(pdf_path, workspace / "pages")
-            panels = self._build_script(page_paths, workspace)
-
-        # Free VLM VRAM before TTS loads — matters on single small GPUs.
-        release = getattr(self._vlm_engine, "release", None)
-        if callable(release):
-            release()
+        try:
+            if panels is None:
+                page_paths = self._page_extractor.extract_pages(pdf_path, workspace / "pages")
+                panels = self._build_script(page_paths, workspace)
+        finally:
+            # Free VLM VRAM before TTS loads — matters on single small GPUs —
+            # and never leave a spawned model server behind when the script
+            # stage fails (a long-lived UI process would find it on the next run).
+            release = getattr(self._vlm_engine, "release", None)
+            if callable(release):
+                release()
 
         # A freshly rebuilt script always invalidates the audio: segments
         # from a previous script must never be stitched under a new one.

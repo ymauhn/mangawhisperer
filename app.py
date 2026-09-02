@@ -146,7 +146,8 @@ with gr.Blocks(title="MangaWhisperer") as demo:
                 provider_in = gr.Dropdown(
                     choices=list(ALL_PROVIDERS), value="qwen", label="Motor de contexto (VLM)",
                     info="qwen/openai/kimi/anthropic usam API (precisa de chave); "
-                         "qwen-local roda na sua GPU; passthrough é offline sem diarização.",
+                         "qwen-local e llamacpp (llama-server + GGUF) rodam na sua GPU; "
+                         "passthrough é offline sem diarização.",
                 )
                 style_in = gr.Dropdown(
                     choices=[(s.label, s.name) for s in STYLES.values()], value="neutro",

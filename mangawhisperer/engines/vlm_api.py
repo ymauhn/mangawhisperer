@@ -28,13 +28,48 @@ from mangawhisperer.models import ContextualizedBlock, SpeechBubble
 
 logger = logging.getLogger(__name__)
 
-_JSON_INSTRUCTION = """
+JSON_INSTRUCTION = """
 
 Responda APENAS com um array JSON, sem markdown e sem texto extra, no formato:
 [{"text": "...", "speaker_id": "...", "is_speech": true}, ...]
 Nunca inclua blocos com "text" vazio — simplesmente omita-os.
 No máximo 2 blocos de ação (is_speech=false) por painel.\
 """
+"""Prompt tail shared by the OpenAI-protocol engines (API and llama-server)."""
+_JSON_INSTRUCTION = JSON_INSTRUCTION
+
+
+def bubble_request_text(bubbles: Sequence[SpeechBubble]) -> str:
+    """The user-turn text: the OCR'd bubble texts as a JSON list."""
+    return (
+        "Textos das bolhas de fala, em ordem de leitura (lista JSON):\n"
+        + json.dumps([b.text for b in bubbles], ensure_ascii=False)
+    )
+
+
+def encode_panel_png(image: Image, max_edge: int) -> str:
+    """Downscale (if the long edge exceeds ``max_edge``) and encode the
+    panel as base64 PNG — the image currency of every OpenAI-protocol
+    engine."""
+    height, width = image.shape[:2]
+    long_edge = max(height, width)
+    if long_edge > max_edge:
+        scale = max_edge / long_edge
+        image = cv2.resize(
+            image,
+            (max(1, round(width * scale)), max(1, round(height * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
+    bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if image.ndim == 3 else image
+    ok, buffer = cv2.imencode(".png", bgr)
+    if not ok:
+        raise ValueError("Failed to encode panel image as PNG")
+    return base64.standard_b64encode(buffer.tobytes()).decode("ascii")
+
+
+def png_data_url(image: Image, max_edge: int) -> str:
+    """``data:image/png;base64,...`` for an ``image_url`` content part."""
+    return "data:image/png;base64," + encode_panel_png(image, max_edge)
 
 
 @dataclass(frozen=True)
@@ -117,7 +152,7 @@ class OpenAICompatibleVisionLanguageEngine(VisionLanguageEngine):
         self._client = client
         self._system_prompt = (
             build_scriptwriter_prompt(known_characters, sfx_tags, sfx_intensity, style_addendum)
-            + _JSON_INSTRUCTION
+            + JSON_INSTRUCTION
         )
 
     @property
@@ -138,10 +173,7 @@ class OpenAICompatibleVisionLanguageEngine(VisionLanguageEngine):
         self, panel_image: Image, bubbles: list[SpeechBubble]
     ) -> list[ContextualizedBlock]:
         """Produce the ordered narration script for one panel."""
-        request_text = (
-            "Textos das bolhas de fala, em ordem de leitura (lista JSON):\n"
-            + json.dumps([b.text for b in bubbles], ensure_ascii=False)
-        )
+        request_text = bubble_request_text(bubbles)
         response = self._get_client().chat.completions.create(
             model=self.model,
             max_tokens=self._max_tokens,
@@ -152,9 +184,7 @@ class OpenAICompatibleVisionLanguageEngine(VisionLanguageEngine):
                     "content": [
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": "data:image/png;base64," + self._encode_png(panel_image)
-                            },
+                            "image_url": {"url": png_data_url(panel_image, self._max_image_edge)},
                         },
                         {"type": "text", "text": request_text},
                     ],
@@ -187,18 +217,5 @@ class OpenAICompatibleVisionLanguageEngine(VisionLanguageEngine):
 
     def _encode_png(self, image: Image) -> str:
         """Downscale (if needed) and encode the panel as base64 PNG."""
-        height, width = image.shape[:2]
-        long_edge = max(height, width)
-        if long_edge > self._max_image_edge:
-            scale = self._max_image_edge / long_edge
-            image = cv2.resize(
-                image,
-                (max(1, round(width * scale)), max(1, round(height * scale))),
-                interpolation=cv2.INTER_AREA,
-            )
-        bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) if image.ndim == 3 else image
-        ok, buffer = cv2.imencode(".png", bgr)
-        if not ok:
-            raise ValueError("Failed to encode panel image as PNG")
-        return base64.standard_b64encode(buffer.tobytes()).decode("ascii")
+        return encode_panel_png(image, self._max_image_edge)
 

@@ -11,6 +11,7 @@ from mangawhisperer.config import (
     PipelineConfig,
     PipelineResources,
     build_pipeline,
+    local_provider_for,
     xtts_can_stay_resident,
 )
 from mangawhisperer.constants import AUDIO_SAMPLE_RATE as LEAF_SAMPLE_RATE
@@ -117,8 +118,17 @@ def test_xtts_never_stays_resident_beside_a_local_vlm_on_8gb():
     laptop = HardwareProfile(device="cuda", gpu_name="RTX 5060 Laptop", vram_gb=8.0)
     workstation = HardwareProfile(device="cuda", gpu_name="A6000", vram_gb=48.0, heavy_models_coexist=True)
     assert not xtts_can_stay_resident(laptop, "qwen-local")
+    assert not xtts_can_stay_resident(laptop, "llamacpp")  # spawned llama-server holds VRAM too
     assert xtts_can_stay_resident(laptop, "anthropic")  # API scriptwriter: nothing else on the GPU
     assert xtts_can_stay_resident(workstation, "qwen-local")
+
+
+def test_prefer_local_picks_llama_server_when_a_gguf_or_server_is_configured():
+    assert local_provider_for({}) == "qwen-local"
+    assert local_provider_for({"LLAMA_MODEL_GGUF": "C:/models/qwen3-vl-8b-q4.gguf"}) == "llamacpp"
+    assert local_provider_for({"LLAMA_SERVER_URL": "http://127.0.0.1:8080"}) == "llamacpp"
+    assert local_provider_for({}, vlm_model="models/gemma-4-e4b.GGUF") == "llamacpp"
+    assert local_provider_for({"LLAMA_MODEL_GGUF": ""}, vlm_model="qwen2.5-vl-7b") == "qwen-local"
 
 
 def test_build_pipeline_offline_assembles_in_order_and_reuses_resources(tmp_path):

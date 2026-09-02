@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -211,11 +212,27 @@ class PipelineResources:
         return True
 
 
+LOCAL_VLM_PROVIDERS: tuple[str, ...] = ("qwen-local", "llamacpp")
+"""Scriptwriters that hold GPU memory on this machine (in-process or a
+spawned llama-server) until the orchestrator calls ``release()``."""
+
+
 def xtts_can_stay_resident(hardware: HardwareProfile, vlm_provider: str) -> bool:
     """The 8 GB rule: a cached XTTS may not sit beside a local VLM unless
     the GPU can hold both. XTTS loads lazily, so a fresh engine built
     here only touches the GPU after the orchestrator released the VLM."""
-    return hardware.heavy_models_coexist or vlm_provider != "qwen-local"
+    return hardware.heavy_models_coexist or vlm_provider not in LOCAL_VLM_PROVIDERS
+
+
+def local_provider_for(env: Mapping[str, str], vlm_model: str | None = None) -> str:
+    """Which local scriptwriter ``prefer_local`` resolves to: the
+    out-of-process llama-server engine (ADR-0004) when a GGUF or a
+    running server is configured, else the in-process Qwen engine."""
+    if (vlm_model or "").lower().endswith(".gguf"):
+        return "llamacpp"
+    if env.get("LLAMA_MODEL_GGUF") or env.get("LLAMA_SERVER_URL"):
+        return "llamacpp"
+    return "qwen-local"
 
 
 @dataclass
@@ -277,7 +294,7 @@ def build_pipeline(config: PipelineConfig, resources: PipelineResources | None =
     # 4) Scriptwriter + reviewer (fail fast on missing credentials).
     provider = config.vlm_provider
     if provider == "auto" and config.prefer_local and config.hardware.device == "cuda":
-        provider = "qwen-local"
+        provider = local_provider_for(os.environ, config.vlm_model)
     vlm_engine = create_vlm_engine(
         provider, model=config.vlm_model, sfx_tags=sfx_tags,
         sfx_intensity=config.sfx_intensity, style_addendum=style.prompt_addendum,

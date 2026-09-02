@@ -74,17 +74,25 @@ class LLMScriptReviewer(ScriptReviewer):
         chunk_size: int = 40,
         max_tokens: int = 8192,
         client: Any = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         """
         Args:
-            provider: ``anthropic`` or an OpenAI-compatible preset
-                (``qwen``/``openai``/``kimi``).
+            provider: ``anthropic``, an OpenAI-compatible preset
+                (``qwen``/``openai``/``kimi``), or ``llamacpp`` — the
+                local llama-server the scriptwriter runs on, addressed
+                by ``base_url`` (no API key needed).
             model: Override the provider's default model.
             known_characters: Cast names for label consistency.
             sfx_tags: Valid effect tags (enables the SFX sanity rule).
             chunk_size: Panels per review request.
             max_tokens: Output budget per chunk.
             client: Injectable client for tests.
+            base_url: OpenAI-compatible endpoint override (required for
+                ``llamacpp``, e.g. ``http://127.0.0.1:8080/v1``).
+            api_key: Explicit key; defaults to the preset's env var
+                (``llamacpp`` uses a placeholder).
         """
         self.provider = provider
         if provider in ("anthropic", "claude"):
@@ -92,16 +100,25 @@ class LLMScriptReviewer(ScriptReviewer):
             self.model = model or "claude-opus-4-8"
         elif provider in PROVIDER_PRESETS:
             self.model = model or PROVIDER_PRESETS[provider].default_model
+        elif provider == "llamacpp":
+            self.model = model or "llama-server"
         else:
             raise ValueError(f"Reviewer: unknown provider {provider!r}")
         self._sfx_tags = tuple(sfx_tags)
         self._chunk_size = chunk_size
         self._max_tokens = max_tokens
         self._client = client
+        self._base_url = base_url
+        self._api_key = api_key
         sfx_rule = _SFX_RULE.format(tags=", ".join(sfx_tags)) if sfx_tags else ""
         self._system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
             cast=", ".join(known_characters) or "(nenhum)", sfx_rule=sfx_rule
         )
+
+    @property
+    def base_url(self) -> str | None:
+        """The OpenAI-compatible endpoint this reviewer talks to (if overridden)."""
+        return self._base_url
 
     @property
     def fingerprint(self) -> str:
@@ -199,13 +216,19 @@ class LLMScriptReviewer(ScriptReviewer):
 
     def _get_openai_client(self) -> Any:
         if self._client is None:
+            if self.provider == "llamacpp":
+                from openai import OpenAI  # noqa: PLC0415 — deferred
+
+                # A local server checks no key, but the SDK insists on one.
+                self._client = OpenAI(api_key=self._api_key or "sk-local", base_url=self._base_url)
+                return self._client
             preset = PROVIDER_PRESETS[self.provider]
-            api_key = os.environ.get(preset.api_key_env)
+            api_key = self._api_key or os.environ.get(preset.api_key_env)
             if not api_key:
                 raise RuntimeError(
                     f"Reviewer sem chave: defina {preset.api_key_env} ou use --no-review."
                 )
             from openai import OpenAI  # noqa: PLC0415 — deferred
 
-            self._client = OpenAI(api_key=api_key, base_url=preset.base_url)
+            self._client = OpenAI(api_key=api_key, base_url=self._base_url or preset.base_url)
         return self._client

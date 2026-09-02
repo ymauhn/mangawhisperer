@@ -68,6 +68,9 @@ cena sempre soa igual, inclusive após resume.
 
 Modelos pesados nunca coexistem: o VLM local expõe `release()` e o orquestrador o
 descarrega antes do TTS subir; o CLAP carrega no upload e é liberado em seguida.
+O VLM local padrão roda **fora do processo** (`llama-server`, ADR-0004): o motor
+`llamacpp` sobe o servidor no primeiro painel e o encerra no `release()`, então a
+mesma regra vale para um modelo que vive em outro processo.
 Pins de versão que importam: `transformers>=4.57,<5` (o coqui-tts quebra com a
 5.x — issue idiap/coqui-ai-TTS#558) e torch do canal cu128 (Blackwell/sm_120).
 
