@@ -33,6 +33,10 @@ vlm = [
 vlm-api = [
     "openai>=1.60",
 ]
+# llama-server local (ADR-0004) fala o protocolo OpenAI: o SDK e a unica dependencia Python.
+llamacpp = [
+    "openai>=1.60",
+]
 ui = [
     "gradio>=4.44",
 ]
@@ -52,6 +56,9 @@ tts = [
 ]
 tts-edge = [
     "edge-tts>=7.0",
+]
+reference = [
+    "faster-whisper>=1.1",  # tools/transcribe_reference.py (referencia de narracao humana, uso local)
 ]
 audio-tagging = [
     "transformers>=4.49,<5",  # CLAP zero-shot pipeline (laion/larger_clap_general)

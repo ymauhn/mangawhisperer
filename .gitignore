@@ -28,3 +28,9 @@ assets/sfx/_normalized/
 # ── SO/editor ──────────────────────────────────────────────────────
 Thumbs.db
 .DS_Store
+
+# ── Referências de estilo e pesos locais: nunca versionar ─────────
+# Áudio/transcrição de narração de terceiros (obra protegida, uso local) e GGUFs.
+assets/reference/
+models/
+*.gguf

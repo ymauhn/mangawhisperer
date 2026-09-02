@@ -76,6 +76,9 @@ python -m venv .venv
 
 # Chave do provedor (um deles)
 set DASHSCOPE_API_KEY=...    # Qwen (padrão)  |  ANTHROPIC_API_KEY / OPENAI_API_KEY / MOONSHOT_API_KEY
+# ...ou 100% local, sem chave: llama-server + GGUF (--vlm llamacpp; veja docs/adr/0004-vlm-local-fora-do-processo.md)
+set LLAMA_MODEL_GGUF=C:\models\qwen3-vl-8b-q4_k_m.gguf
+set LLAMA_MMPROJ_GGUF=C:\models\mmproj-qwen3-vl-8b-f16.gguf
 
 # Demo de 3 páginas (use um PDF seu — veja a nota legal)
 .venv\Scripts\python main_demo.py --pdf "caminho/do/seu/manga.pdf" --pages 3 --style sombrio
@@ -88,6 +91,14 @@ A interface web permite: upload do PDF, escolha de provedor/modelo com a sua
 própria chave, estilo de narração, intensidade da sonoplastia, trilha e volumes por
 canal, revisão ativável — e uma aba de **biblioteca de sons** onde seus próprios
 efeitos são etiquetados automaticamente por IA.
+
+## Referência de narração humana (opcional, uso local)
+
+`python -m tools.transcribe_reference --audio <arquivo>` transcreve uma narração
+humana com faster-whisper e extrai ritmo (pausas, palavras/min) e excertos de
+estilo para servir de exemplo ao roteirista. O áudio e a transcrição são obra de
+terceiros: ficam fora do git (`assets/reference/`) e só para estudo pessoal — veja
+`docs/reference-narration.md`.
 
 ## Custos (referência, ago/2026)
 
