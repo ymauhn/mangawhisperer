@@ -126,6 +126,24 @@ _Avoid_: ground truth (no código pode aparecer, mas em prosa é Gabarito), labe
 Os critérios e a barra de aprovação aplicados ao Benchmark Set (atribuição de falante, descrições usáveis, onomatopeias tratadas).
 _Avoid_: métrica, score
 
+**Checker**:
+Conjunto de verificações determinísticas sobre um roteiro (falante vs. gabarito, JSON válido, blocos vazios, onomatopeias, tags de efeito) que produz recompensas verificáveis.
+_Avoid_: validador, linter, reward function (no código pode aparecer)
+
+**Judge**:
+O avaliador automático da parte subjetiva da rúbrica (qualidade de descrição, naturalidade), primeiro um LLM, depois um modelo pequeno destilado.
+_Avoid_: crítico, avaliador, reviewer (é outro estágio)
+
+### Identidade
+
+**Gallery**:
+Recortes de referência de cada membro do elenco, extraídos do próprio mangá, guardados por volume.
+_Avoid_: banco de rostos, dataset
+
+**Speaker Hint**:
+Sugestão consultiva de quem está no painel (e, por geometria, quem fala cada balão), produzida sem LLM a partir da galeria; o scriptwriter usa para desempatar, não para decidir.
+_Avoid_: diarização (é o resultado final), detecção de personagem (é só um passo)
+
 ### Execução
 
 **Reading Order Flag**:
