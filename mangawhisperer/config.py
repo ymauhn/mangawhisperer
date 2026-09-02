@@ -112,6 +112,11 @@ class PipelineConfig(BaseModel):
 
     # Narration
     style: str = "neutro"
+    style_examples: Path | None = Field(
+        default=None,
+        description="Optional file with excerpts of a human narrator (tools/transcribe_reference.py) "
+        "appended to the scriptwriter prompt as a tone reference.",
+    )
     tts_backend: str = "xtts"
     speed: float | None = None
     gap_ms: int | None = Field(default=None, ge=0)
@@ -275,8 +280,15 @@ def build_pipeline(config: PipelineConfig, resources: PipelineResources | None =
 
     # 1) Style — provides the defaults everything below may inherit.
     style = config.style_preset
+    style_addendum = style.prompt_addendum
+    examples_note = ""
+    if config.style_examples is not None:
+        from mangawhisperer.engines.styles import style_examples_addendum
+
+        style_addendum += style_examples_addendum(config.style_examples.read_text(encoding="utf-8"))
+        examples_note = f" + exemplos de tom: {config.style_examples.name}"
     report.append(f"[STY] estilo: {style.label} (speed={config.effective_speed}, "
-                  f"gap={config.effective_gap_ms}ms)")
+                  f"gap={config.effective_gap_ms}ms){examples_note}")
 
     # 2) Sound effects.
     sfx_library = SFXLibrary(config.sfx_dir) if config.sfx_intensity > 0 else None
@@ -297,7 +309,7 @@ def build_pipeline(config: PipelineConfig, resources: PipelineResources | None =
         provider = local_provider_for(os.environ, config.vlm_model)
     vlm_engine = create_vlm_engine(
         provider, model=config.vlm_model, sfx_tags=sfx_tags,
-        sfx_intensity=config.sfx_intensity, style_addendum=style.prompt_addendum,
+        sfx_intensity=config.sfx_intensity, style_addendum=style_addendum,
     )
     preflight = getattr(vlm_engine, "preflight", None)
     if callable(preflight):

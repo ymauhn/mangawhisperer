@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+VOICE_PROFILES: tuple[str, ...] = ("homem", "mulher", "idoso", "idosa", "menino", "menina", "criatura")
+"""How a speaker sounds as drawn — what the scriptwriter declares and the
+TTS casts from (see ``engines/casting.py``)."""
 
 
 class BoundingBox(BaseModel):
@@ -115,6 +120,22 @@ class ContextualizedBlock(BaseModel):
         description="Optional sound-effect tag from the SFX library, played "
         "right before this block (e.g. 'espada', 'explosao').",
     )
+    voice: str | None = Field(
+        default=None,
+        description="Voice profile of the speaker as drawn, one of "
+        "VOICE_PROFILES (homem, mulher, idoso, idosa, menino, menina, criatura); "
+        "None for narration or when unknown.",
+    )
+
+    @field_validator("voice", mode="before")
+    @classmethod
+    def _normalize_voice(cls, value: object) -> str | None:
+        """Lenient: models sometimes capitalise or invent labels — an unknown
+        profile becomes None instead of failing the whole panel."""
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        return text if text in VOICE_PROFILES else None
 
 
 class PanelData(BaseModel):

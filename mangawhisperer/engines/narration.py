@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Literal
 
+from mangawhisperer.engines.casting import majority_profile
 from mangawhisperer.engines.sfx import suggest_tag
 from mangawhisperer.models import ContextualizedBlock, PanelData
 
@@ -64,6 +65,20 @@ def plan_narration(
                 last_speaker = block.speaker_id
             plan.append(NarrationItem(kind="speech", block=block))
     return plan
+
+
+def consolidate_voice_profiles(*panel_lists: Iterable[PanelData]) -> dict[str, str | None]:
+    """One voice profile per speaker: the majority of the scriptwriter's
+    per-block votes (several script versions may be passed — e.g. the raw
+    and the reviewed one — so a reviewer that drops the field costs
+    nothing). Speakers without any vote map to None."""
+    votes: dict[str, list[str | None]] = {}
+    for panels in panel_lists:
+        for panel in panels:
+            for block in panel.blocks:
+                if block.is_speech and block.speaker_id != NARRATOR:
+                    votes.setdefault(block.speaker_id, []).append(block.voice)
+    return {speaker: majority_profile(v) for speaker, v in votes.items()}
 
 
 def auto_tag_sfx(

@@ -64,11 +64,20 @@ are NOT dialogue: drop them, or fold what they convey into an action block \
 3. Expressive punctuation: the text-to-speech engine uses punctuation for \
 intonation. Preserve exclamation marks, question marks and ellipses in \
 dialogue; use commas to mark dramatic pauses in action descriptions.
-4. Action blocks (is_speech=false, speaker_id="Narrator"): zero to two \
-short, vivid audio-description cues in Brazilian Portuguese for important \
-visual action that the dialogue alone would not convey. Place each one \
-where it belongs in the narration order. If the panel has no dialogue, \
-describe the scene in one sentence.\
+4. Action blocks (is_speech=false, speaker_id="Narrator"): audio description \
+for a blind listener, in Brazilian Portuguese. Describe ONLY what is drawn in \
+the panel — who is present, where they are, what they do, what changes. Never \
+invent atmosphere, sounds, smells, thoughts or feelings that are not visibly \
+drawn (a drawn expression may be named plainly: "Guts cerra os dentes"). Do \
+not restate what the dialogue already says. Be brief: one action block per \
+panel, two at most when the action changes mid-panel, each about 20 words or \
+fewer, in plain direct sentences — no metaphors, no stacked adjectives. Place \
+each one where it belongs in the narration order. If the panel has no \
+dialogue, describe the scene in one plain sentence.
+5. Voice profile: for every dialogue block set "voice" to how the speaker \
+looks as drawn, exactly one of: homem, mulher, idoso, idosa, menino, menina, \
+criatura. Keep it identical for the same character across panels. Leave it \
+null for narration blocks.\
 {sfx_section}
 
 Every output text must be in Brazilian Portuguese.\
@@ -82,12 +91,12 @@ storms/dramatic reveals -> trovao; doors -> porta."""
 
 _SFX_SECTION_LEVELS = {
     1: """
-5. Sound effects: any block may include an "sfx" field naming ONE tag played \
+6. Sound effects: any block may include an "sfx" field naming ONE tag played \
 right before it. Use one only when the scene truly demands it — a single \
 striking moment per panel at most. {scene_map} Available tags: {tags}.\
 """,
     2: """
-5. Sound effects bring the audio drama to life — actively look for the \
+6. Sound effects bring the audio drama to life — actively look for the \
 chance to use one in every panel that shows physical action. Any block may \
 include an "sfx" field naming ONE tag played right before it (usually on an \
 action block). {scene_map} When an action matches a tag, USE it — prefer \
@@ -95,7 +104,7 @@ adding an effect over skipping it. Up to 2 effects per panel. Available \
 tags: {tags}.\
 """,
     3: """
-5. Sound effects are a core part of this production — EVERY panel with any \
+6. Sound effects are a core part of this production — EVERY panel with any \
 physical action, movement or atmosphere should carry at least one. Any \
 block may include an "sfx" field naming ONE tag played right before it. \
 {scene_map} Be generous: if any tag remotely fits the scene, use it. Up to \

@@ -38,6 +38,11 @@ _Avoid_: linha, fala (é só um tipo de bloco), segmento (é áudio)
 
 **Action Description**:
 Bloco do Narrador que descreve o que só existe visualmente no painel — o núcleo da acessibilidade.
+Regra de sobriedade: descreve apenas o que está desenhado (quem, onde, o quê), sem atmosfera, sons ou sentimentos inventados, e sem repetir o diálogo.
+
+**Tone Reference**:
+Excertos de um narrador humano (transcritos de uma narração de referência) anexados ao prompt do roteirista para imitar ritmo e foco — nunca para copiar frases; material local, fora do repositório.
+_Avoid_: few-shot (o termo técnico; aqui é referência de tom), exemplo
 _Avoid_: legenda, descrição de cena, caption
 
 **Speaker Label**:
@@ -98,6 +103,14 @@ _Avoid_: SFX (sigla aceitável no código), sample
 
 **Tag**:
 A chave da biblioteca que nomeia um efeito ("espada", "trovão"); nome de arquivo ou entrada do dicionário.
+
+**Voice Profile**:
+Como o falante soa segundo o que está desenhado (homem, mulher, idoso, idosa, menino, menina, criatura); declarado pelo roteirista em cada fala e consolidado por personagem antes do TTS.
+_Avoid_: gênero (é só uma das dimensões), timbre (é a voz concreta, não o perfil)
+
+**Cast Voices Registry**:
+A tabela persistente por volume (`cast_voices.json`) que fixa a voz concreta de cada personagem a partir do elenco curado e do banco do seu perfil; garante que o mesmo personagem tenha a mesma voz em todas as execuções.
+_Avoid_: mapa de vozes, cache de vozes
 _Avoid_: keyword, label
 
 **Variant**:

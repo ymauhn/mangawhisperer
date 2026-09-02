@@ -37,7 +37,7 @@ from mangawhisperer.engines.script_parsing import parse_script_blocks, passthrou
 from mangawhisperer.engines.vlm import DEFAULT_CAST, build_scriptwriter_prompt
 from mangawhisperer.engines.vlm_api import JSON_INSTRUCTION, bubble_request_text, png_data_url
 from mangawhisperer.interfaces import Image, VisionLanguageEngine
-from mangawhisperer.models import ContextualizedBlock, SpeechBubble
+from mangawhisperer.models import VOICE_PROFILES, ContextualizedBlock, SpeechBubble
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +111,7 @@ def build_panel_schema(sfx_tags: Sequence[str] = ()) -> dict[str, Any]:
     }
     if sfx_tags:
         properties["sfx"] = {"type": "string", "enum": list(sfx_tags)}
+    properties["voice"] = {"type": "string", "enum": list(VOICE_PROFILES)}
     return {
         "type": "array",
         "items": {

@@ -90,6 +90,7 @@ def _coerce_block(item: Any) -> ContextualizedBlock | None:
             speaker_id=speaker,
             is_speech=bool(item.get("is_speech", True)),
             sfx=sfx,
+            voice=item.get("voice"),
         )
     except ValidationError:
         return None

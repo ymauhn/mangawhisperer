@@ -22,7 +22,7 @@ from typing import Callable
 import numpy as np
 from pydantic import TypeAdapter
 
-from mangawhisperer.engines.narration import auto_tag_sfx, plan_narration
+from mangawhisperer.engines.narration import auto_tag_sfx, consolidate_voice_profiles, plan_narration
 from mangawhisperer.engines.text_cleaning import clean_ocr_text, is_ocr_junk
 from mangawhisperer.interfaces import (
     AudioStitcher,
@@ -181,6 +181,8 @@ class MangaAudioOrchestrator:
             if callable(release):
                 release()
 
+        self._cast_voices(panels, workspace)
+
         # A freshly rebuilt script always invalidates the audio: segments
         # from a previous script must never be stitched under a new one.
         segments = self._resume_segments(workspace) if script_resumed else None
@@ -192,6 +194,21 @@ class MangaAudioOrchestrator:
         logger.info("Finished %s: %d panels, %d segments -> %s",
                     pdf_path.name, len(panels), len(segments), final_path)
         return final_path
+
+    def _cast_voices(self, panels: list[PanelData], workspace: Path) -> None:
+        """Give every speaker a persistent voice matching the profile the
+        scriptwriter saw (``cast_voices.json``), if the TTS supports it."""
+        assign = getattr(self._tts_engine, "assign_voices", None)
+        if not callable(assign):
+            return
+        sources = [panels]
+        raw = workspace / "script" / "panels_raw.json"
+        if raw.is_file():  # the reviewer may drop the field: count the raw votes too
+            try:
+                sources.append(_PANELS_ADAPTER.validate_json(raw.read_bytes()))
+            except ValueError:
+                pass
+        assign(consolidate_voice_profiles(*sources), workspace / "cast_voices.json")
 
     def _resume_script(self, workspace: Path) -> list[PanelData] | None:
         """Load the script checkpoint if resuming, it exists, AND it was

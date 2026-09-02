@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from mangawhisperer.constants import AUDIO_SAMPLE_RATE
+from mangawhisperer.engines.casting import VoiceRegistry
 from mangawhisperer.interfaces import MultiSpeakerTTSEngine
 from mangawhisperer.models import AudioSegmentMetadata, ContextualizedBlock
 
@@ -54,7 +55,31 @@ FALLBACK_VOICE_POOL: tuple[str, ...] = (
     "Brenda Stern",
     "Henriette Usha",
 )
-"""Voices assigned deterministically to uncast speakers."""
+"""Voices for uncast speakers whose voice profile is unknown."""
+
+VOICE_BANK: dict[str, tuple[str, ...]] = {
+    # XTTS v2 ships 58 studio voices. Gender follows the speaker names;
+    # the age/creature groupings are judged by ear and meant to be tuned.
+    "homem": (
+        "Abrahan Mack", "Gilberto Mathias", "Suad Qasim", "Damien Black", "Zacharie Aimilios",
+        "Filip Traverse", "Damjan Chapman", "Wulf Carlevaro", "Eugenio Mataracı", "Ferran Simen",
+        "Xavier Hayasaka", "Luis Moray", "Marcos Rudaski", "Badr Odhiambo", "Viktor Eka",
+        "Adde Michal", "Ige Behringer", "Kazuhiko Atallah", "Ludvig Milivoj", "Ilkin Urbano",
+    ),
+    "idoso": ("Torcull Diarmuid", "Kumar Dahl", "Dionisio Schuyler", "Viktor Menelaos", "Baldur Sanjin"),
+    "menino": ("Andrew Chipper", "Royston Min", "Ilkin Urbano"),
+    "mulher": (
+        "Ana Florence", "Claribel Dervla", "Alison Dietlinde", "Annmarie Nele", "Asya Anara",
+        "Gitta Nikolina", "Sofia Hellen", "Tammy Grit", "Tanja Adelina", "Vjollca Johnnie",
+        "Maja Ruoho", "Uta Obando", "Lidiya Szekeres", "Chandra MacFarland", "Szofi Granger",
+        "Camilla Holmström", "Lilya Stainthorpe", "Zofija Kendrick", "Narelle Moon",
+        "Alexandra Hisakawa", "Alma María",
+    ),
+    "idosa": ("Henriette Usha", "Brenda Stern", "Rosemary Okafor", "Barbora MacLean"),
+    "menina": ("Daisy Studious", "Gracie Wise", "Tammie Ema", "Nova Hogarth"),
+    "criatura": ("Baldur Sanjin", "Torcull Diarmuid", "Damien Black"),
+}
+"""Voice profile (``models.VOICE_PROFILES``) -> XTTS voices to cast from."""
 
 _STRIP_CHARS = str.maketrans("", "", '"“”*«»[]')
 
@@ -119,6 +144,7 @@ class XTTSEngine(MultiSpeakerTTSEngine):
         language: str = "pt",
         speed: float = 1.0,
         extra_synthesis_kwargs: Mapping[str, float] | None = None,
+        voice_bank: Mapping[str, Sequence[str]] | None = None,
         device: str | None = None,
         synthesizer: Any = None,
     ) -> None:
@@ -146,12 +172,16 @@ class XTTSEngine(MultiSpeakerTTSEngine):
         self._device = device
         self._synthesizer = synthesizer
         self._block_index = 0
+        self._registry: VoiceRegistry[str] = VoiceRegistry(
+            self._cast, voice_bank if voice_bank is not None else VOICE_BANK, self._fallback
+        )
 
     @property
     def fingerprint(self) -> str:
         """Checkpoint identity: real XTTS output, per model + language + pace."""
         extras = ",".join(f"{k}={v}" for k, v in sorted(self._extra_kwargs.items()))
-        return f"xtts:{self.MODEL_NAME}:{self._language}:speed={self._speed}:{extras or 'default'}"
+        cast = f":cast={self._registry.digest()}" if self._registry.assignments else ""
+        return f"xtts:{self.MODEL_NAME}:{self._language}:speed={self._speed}:{extras or 'default'}{cast}"
 
     def synthesize(self, block: ContextualizedBlock, output_path: Path) -> AudioSegmentMetadata:
         """Render one block to WAV with the speaker's assigned voice; a
@@ -159,7 +189,7 @@ class XTTSEngine(MultiSpeakerTTSEngine):
         if is_pronounceable(block.text):
             self._get_synthesizer().tts_to_file(
                 text=normalize_for_tts(block.text),
-                speaker=self.voice_for(block.speaker_id),
+                speaker=self.voice_for(block.speaker_id, block.voice),
                 language=self._language,
                 speed=self._speed,
                 file_path=str(output_path),
@@ -192,16 +222,22 @@ class XTTSEngine(MultiSpeakerTTSEngine):
         if extra_synthesis_kwargs is not None:
             self._extra_kwargs = dict(extra_synthesis_kwargs)
 
-    def voice_for(self, speaker_id: str) -> str:
+    def assign_voices(self, profiles: Mapping[str, str | None], registry_path: Path | None = None) -> dict[str, str]:
+        """Cast every speaker once (curated cast, then the profile's bank,
+        avoiding voices already taken) and persist to ``registry_path``
+        so the same character keeps the same voice across runs."""
+        assigned = self._registry.assign(profiles, registry_path)
+        logger.info("Elenco de vozes: %s", ", ".join(f"{s}={v}" for s, v in sorted(assigned.items())))
+        return assigned
+
+    def voice_for(self, speaker_id: str, profile: str | None = None) -> str:
         """Resolve a speaker id to an XTTS voice name.
 
-        Cast members get their curated voice; anyone else hashes into
-        the fallback pool (stable across runs and Python processes).
+        Cast members get their curated voice; an assigned speaker keeps
+        the registered one; anyone else gets a deterministic voice from
+        the bank of their voice profile (or the fallback pool).
         """
-        if speaker_id in self._cast:
-            return self._cast[speaker_id]
-        digest = hashlib.sha1(speaker_id.encode("utf-8")).digest()
-        return self._fallback[digest[0] % len(self._fallback)]
+        return self._registry.voice_for(speaker_id, profile)
 
     def _get_synthesizer(self) -> Any:
         if self._synthesizer is None:

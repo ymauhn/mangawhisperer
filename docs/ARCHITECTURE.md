@@ -125,3 +125,30 @@ essas páginas esperam o detector treinado previsto no mapa de decisões.
 por tecla de atalho em `tests/benchmark/gabarito/<volume>.json` (retomável,
 salva a cada tecla). O gabarito referencia os recortes pelo nome — as páginas
 em si nunca entram no repositório.
+
+## 11. Vozes por perfil, fixadas por volume
+
+O roteirista, que vê o painel, declara em cada fala o **perfil de voz** do
+falante como desenhado (`voice`: homem, mulher, idoso, idosa, menino, menina,
+criatura). Antes do TTS, o orquestrador consolida um perfil por personagem
+(maioria dos votos, contando também o roteiro bruto, caso o revisor descarte o
+campo) e o motor de voz **escala** cada falante uma única vez: elenco curado
+primeiro, depois uma voz ainda não usada do banco daquele perfil (o XTTS traz
+58 vozes de estúdio; o Edge, três vozes com deslocamentos de tom). A escolha
+fica em `cast_voices.json` no workspace do volume e entra na fingerprint do
+áudio — o "Sacerdote" da página 31 tem a mesma voz na página 200 e na
+execução do mês que vem, e nunca recebe uma voz feminina. Sem perfil (modelo
+que omitiu o campo), vale o pool antigo. Timbres de idade/criatura foram
+agrupados de ouvido e podem ser ajustados em `engines/tts.py`.
+
+## 12. Audiodescrição sóbria
+
+O prompt do roteirista passou a exigir descrições só do que está desenhado
+(quem, onde, o quê), sem atmosfera, sons ou sentimentos inventados, curtas e
+sem repetir o que o diálogo já diz — a reclamação real do autor ouvindo o
+primeiro áudio foi "inventa e enfeita demais". O preset `sobrio` aperta mais
+(≤ 12 palavras, um bloco por painel, pular quando o diálogo basta). Excertos
+de um narrador humano (`tools/transcribe_reference.py`) entram como
+referência de tom por `--style-examples`, com a instrução de imitar ritmo e
+foco, nunca copiar frases; como o addendum faz parte do hash do prompt,
+roteiros antigos são invalidados de propósito.

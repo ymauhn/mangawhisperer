@@ -30,6 +30,19 @@ STYLES: dict[str, NarrationStyle] = {
         label="Pragmático / Neutro",
         prompt_addendum="",
     ),
+    "sobrio": NarrationStyle(
+        name="sobrio",
+        label="Sóbrio / Audiodescrição",
+        prompt_addendum="""
+
+Narration style directive (SÓBRIO): audio description at its most restrained.
+At most one action block per panel, twelve words or fewer, naming only what
+is drawn: who, where, the action. No mood adjectives, no sound words, no
+interpretation. Skip the action block entirely when the dialogue already
+makes the action clear.""",
+        tts_speed=1.0,
+        gap_ms=450,
+    ),
     "sombrio": NarrationStyle(
         name="sombrio",
         label="Sombrio / Dark",
@@ -59,6 +72,25 @@ block into the next.""",
         suggested_bgm="batalha",
     ),
 }
+
+
+MAX_EXAMPLE_CHARS = 6000
+
+
+def style_examples_addendum(excerpts: str, max_chars: int = MAX_EXAMPLE_CHARS) -> str:
+    """Wrap excerpts of a human narrator (e.g. ``style_excerpts.md`` from
+    ``tools/transcribe_reference.py``) as a tone reference for the
+    scriptwriter: imitate rhythm and focus, never copy sentences."""
+    text = excerpts.strip()
+    if not text:
+        return ""
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit("\n", 1)[0] + "\n[...]"
+    return (
+        "\n\nTone reference — excerpts from a human narrator of this manga for blind "
+        "listeners. Imitate the rhythm, the plain vocabulary and the focus on what is "
+        "drawn; do NOT copy or paraphrase these sentences into the script:\n" + text
+    )
 
 
 def get_style(name: str) -> NarrationStyle:

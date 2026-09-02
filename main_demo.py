@@ -44,6 +44,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="Raiz do workspace.")
     parser.add_argument("--style", choices=tuple(STYLES), default="neutro",
                         help="Preset de narração: roteiro, ritmo, pausas e BGM sugerida.")
+    parser.add_argument("--style-examples", type=Path, default=None,
+                        help="Arquivo com excertos de um narrador humano (tools.transcribe_reference) como referência de tom.")
     parser.add_argument("--vlm", choices=(*ALL_PROVIDERS, "auto"), default="auto",
                         help="Provedor do roteirista (auto: chave de API disponível, senão local).")
     parser.add_argument("--model", default=None, help="Override do modelo do provedor.")
@@ -79,6 +81,7 @@ def config_from_args(args: argparse.Namespace) -> PipelineConfig:
         prefer_local=args.prefer_local,
         review=not args.no_review,
         style=args.style,
+        style_examples=args.style_examples,
         tts_backend=args.tts,
         speed=args.speed,
         gap_ms=args.gap_ms,

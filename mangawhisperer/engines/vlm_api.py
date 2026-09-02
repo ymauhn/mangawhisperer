@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 JSON_INSTRUCTION = """
 
 Responda APENAS com um array JSON, sem markdown e sem texto extra, no formato:
-[{"text": "...", "speaker_id": "...", "is_speech": true}, ...]
+[{"text": "...", "speaker_id": "...", "is_speech": true, "voice": "homem"}, ...]
+"voice" só nos blocos de fala: homem, mulher, idoso, idosa, menino, menina ou criatura.
 Nunca inclua blocos com "text" vazio — simplesmente omita-os.
 No máximo 2 blocos de ação (is_speech=false) por painel.\
 """

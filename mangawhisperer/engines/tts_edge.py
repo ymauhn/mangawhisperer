@@ -22,6 +22,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 
 from mangawhisperer.constants import AUDIO_SAMPLE_RATE as TARGET_RATE
+from mangawhisperer.engines.casting import VoiceRegistry
 from mangawhisperer.engines.sfx import read_audio, resample_audio
 from mangawhisperer.engines.tts import SILENT_BEAT_MS, is_pronounceable, normalize_for_tts, write_silence
 from mangawhisperer.interfaces import MultiSpeakerTTSEngine
@@ -44,6 +45,17 @@ DEFAULT_EDGE_CAST: dict[str, VoiceSpec] = {
     "Monstro": ("pt-BR-AntonioNeural", -14, -22),
     "Desconhecido": ("pt-BR-AntonioNeural", 0, -6),
 }
+
+EDGE_VOICE_BANK: dict[str, tuple[VoiceSpec, ...]] = {
+    "homem": (("pt-BR-AntonioNeural", -4, -10), ("pt-BR-AntonioNeural", 8, 8), ("pt-BR-AntonioNeural", 0, -6)),
+    "idoso": (("pt-BR-AntonioNeural", -14, -22), ("pt-BR-AntonioNeural", -10, -16)),
+    "menino": (("pt-BR-AntonioNeural", 12, 20), ("pt-BR-ThalitaMultilingualNeural", 6, -4)),
+    "mulher": (("pt-BR-FranciscaNeural", 0, 0), ("pt-BR-FranciscaNeural", -4, -6), ("pt-BR-ThalitaMultilingualNeural", 0, 0)),
+    "idosa": (("pt-BR-FranciscaNeural", -12, -14),),
+    "menina": (("pt-BR-ThalitaMultilingualNeural", 10, 14), ("pt-BR-FranciscaNeural", 8, 12)),
+    "criatura": (("pt-BR-AntonioNeural", -16, -28),),
+}
+"""Voice profile -> Edge voices (three pt-BR voices, so profiles are offsets)."""
 
 FALLBACK_EDGE_POOL: tuple[VoiceSpec, ...] = (
     ("pt-BR-AntonioNeural", -4, -10),
@@ -82,11 +94,13 @@ class EdgeTTSEngine(MultiSpeakerTTSEngine):
         self._speed = speed
         self._communicate_factory = communicate_factory
         self._block_index = 0
+        self._registry: VoiceRegistry[VoiceSpec] = VoiceRegistry(self._cast, EDGE_VOICE_BANK, self._fallback)
 
     @property
     def fingerprint(self) -> str:
         cast_digest = hashlib.sha1(repr(sorted(self._cast.items())).encode()).hexdigest()[:8]
-        return f"edge-tts:{cast_digest}:speed={self._speed}"
+        assigned = f":cast={self._registry.digest()}" if self._registry.assignments else ""
+        return f"edge-tts:{cast_digest}:speed={self._speed}{assigned}"
 
     def configure(self, speed: float | None = None, extra_synthesis_kwargs=None) -> None:
         """Interface parity with :class:`XTTSEngine`."""
@@ -105,7 +119,7 @@ class EdgeTTSEngine(MultiSpeakerTTSEngine):
             )
             self._block_index += 1
             return metadata
-        voice, rate, pitch = self.voice_for(block.speaker_id)
+        voice, rate, pitch = self.voice_for(block.speaker_id, block.voice)
         rate += round((self._speed - 1.0) * 100)
         temp_mp3 = output_path.with_suffix(".edge.mp3")
         communicate = self._get_factory()(
@@ -135,12 +149,13 @@ class EdgeTTSEngine(MultiSpeakerTTSEngine):
         self._block_index += 1
         return metadata
 
-    def voice_for(self, speaker_id: str) -> VoiceSpec:
-        """Cast voice, or a stable fallback variant for new speakers."""
-        if speaker_id in self._cast:
-            return self._cast[speaker_id]
-        digest = hashlib.sha1(speaker_id.encode("utf-8")).digest()
-        return self._fallback[digest[0] % len(self._fallback)]
+    def assign_voices(self, profiles: Mapping[str, str | None], registry_path: Path | None = None) -> dict[str, VoiceSpec]:
+        """Same contract as :meth:`XTTSEngine.assign_voices`."""
+        return self._registry.assign(profiles, registry_path)
+
+    def voice_for(self, speaker_id: str, profile: str | None = None) -> VoiceSpec:
+        """Cast voice, the registered one, or a stable pick from the profile's bank."""
+        return self._registry.voice_for(speaker_id, profile)
 
     def _get_factory(self) -> Callable[..., Any]:
         if self._communicate_factory is None:
