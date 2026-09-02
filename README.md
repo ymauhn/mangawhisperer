@@ -49,7 +49,14 @@ corrige inconsistências que o roteirista, trabalhando painel a painel, não enx
   trilha de fundo em loop com fade, em numpy puro.
 - **Estilos de narração**: presets (Sombrio / Épico / Neutro) que ajustam
   simultaneamente o prompt do roteirista, o ritmo do TTS e as pausas.
-- **141 testes offline** (mais um gated que baixa modelos reais), cobrindo dos
+- **Configuração única do pipeline**: CLI e UI constroem o mesmo `PipelineConfig`
+  validado e chamam `build_pipeline`; a ordem de montagem dos motores existe em
+  um só lugar.
+- **Heurísticas sem token**: segmentação de painéis por rede de sarjetas e
+  perfis de projeção (spreads duplos, sarjetas finas, ordem rtl/ltr), filtro
+  determinístico de lixo de OCR e plano de narração puro — tudo antes de
+  gastar um token de modelo.
+- **225 testes offline** (mais um gated que baixa modelos reais), cobrindo dos
   contratos Pydantic ao smoke E2E do CLI.
 
 ## Quickstart
@@ -96,9 +103,10 @@ roteirista/revisor usam API — por volume de ~220 páginas:
 
 ## Limitações conhecidas (honestas)
 
-- A segmentação de painéis usa visão clássica e tende a tratar a página inteira
-  como um painel; a integração de um detector treinado (comic-text-detector/Magi)
-  está no roteiro.
+- A segmentação de painéis é visão clássica (rede de sarjetas + corte por perfis
+  de projeção): separa layouts com sarjetas retas, mas arte ou balões que
+  atravessam a sarjeta ainda fundem painéis; a integração de um detector
+  treinado (comic-text-detector/Magi) está no roteiro.
 - As vozes vêm dos speakers embutidos do XTTS v2 — clonagem por referência é
   suportada pelo motor, mas ainda não exposta na UI.
 - O Edge-TTS usa um endpoint não-oficial da Microsoft: funciona, mas é um fallback,
@@ -116,7 +124,7 @@ avalie as licenças dos modelos antes de qualquer uso além do pessoal.
 
 Desenvolvido em **par com IA** — engenharia conduzida em sessões agênticas com o
 Claude (Anthropic), que assina coautoria nos commits: arquitetura orientada a
-contratos, TDD do primeiro esqueleto mockado até os 141 testes atuais, pesquisa
+contratos, TDD do primeiro esqueleto mockado até os 225 testes atuais, pesquisa
 automatizada de dependências e preços, e validação incremental por áudio real em
 cada marco. As decisões de produto, a direção e as validações são do autor. O
 histórico de commits reflete a evolução real do sistema.

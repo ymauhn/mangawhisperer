@@ -70,3 +70,55 @@ Modelos pesados nunca coexistem: o VLM local expõe `release()` e o orquestrador
 descarrega antes do TTS subir; o CLAP carrega no upload e é liberado em seguida.
 Pins de versão que importam: `transformers>=4.57,<5` (o coqui-tts quebra com a
 5.x — issue idiap/coqui-ai-TTS#558) e torch do canal cu128 (Blackwell/sm_120).
+
+## 8. Uma única montagem do pipeline (`PipelineConfig`)
+
+CLI e interface web montavam os motores cada um do seu jeito — e um bug de
+ordem de inicialização (`bgm_name` usado antes de existir) só aparecia num
+deles. Hoje toda entrada constrói um `PipelineConfig` (Pydantic, imutável,
+validado) e chama `build_pipeline`, que monta os estágios numa ordem fixa:
+estilo ➜ efeitos ➜ trilha ➜ roteirista (com *preflight* de credenciais) ➜
+revisor ➜ voz ➜ orquestrador. Valores `None` herdam do preset de estilo;
+valores explícitos sempre vencem. O mesmo módulo é dono dos invariantes que os
+motores compartilhavam em silêncio (`constants.py`: 24 kHz mono 16-bit) e do
+perfil de hardware (`HardwareProfile`: 8 GB ⇒ modelos pesados não coexistem).
+`PipelineResources` guarda OCR e XTTS carregados para a UI reaproveitar entre
+cliques; o CLI monta tudo do zero. A regra dos 8 GB é aplicada na montagem:
+com roteirista local numa GPU pequena, o XTTS em cache é liberado
+(`evict()`) e reconstruído por execução — como ele carrega sob demanda, só
+toca a GPU depois que o orquestrador descarregou o VLM.
+
+## 9. Heurísticas sem token antes de qualquer modelo
+
+Três filtros determinísticos rodam antes do VLM ver um pixel ou o LLM ler um
+caractere:
+
+1. **Layout** (`engines/layout.py`) — escada de heurísticas que só divide, nunca
+   funde: divisão de *spreads* (imagem paisagem = duas páginas), **rede de
+   sarjetas** (o papel conectado à margem é inundado; os buracos são painéis —
+   sobrevive a arte vazando na sarjeta e a balões sobre a borda), **corte X-Y
+   por perfis de projeção** dentro de cada região (sarjetas de 3 px sobrevivem;
+   um corte atravessado por uma linha reta longa é interior de painel, nunca
+   sarjeta), contornos como fallback e a página inteira por último. A ordem
+   de leitura respeita a flag `reading_order` (rtl/ltr).
+2. **Lixo de OCR** (`engines/text_cleaning.py`) — regex/heurísticas para
+   descartar o que o EasyOCR alucina em mangá (`{`, `@`, "Jbl@jw", números de
+   página, sopa de glifos sem vogais) sem perder reações como "?!" ou "Hmph".
+3. **Plano de narração** (`engines/narration.py`) — anúncios de personagem,
+   posição dos efeitos e o tagger por palavras-chave são funções puras sobre o
+   roteiro; o orquestrador só renderiza o plano. Cada regra tem teste de
+   milissegundos, sem TTS.
+
+Limite honesto: arte que atravessa a sarjeta em toda a largura e balões cujo
+contorno cruza a sarjeta (Berserk faz as duas coisas com frequência) ainda
+fundem painéis. Uma segunda passada que apagava traços finos recuperava
+algumas dessas sarjetas, mas também fatiava colunas de balões dentro de
+painéis — perder diálogo é pior do que fundir painéis, então foi descartada;
+essas páginas esperam o detector treinado previsto no mapa de decisões.
+
+## 10. Gabarito humano para o Juiz Automático
+
+`python -m tools.label_benchmark` mostra recortes do workspace e grava rótulos
+por tecla de atalho em `tests/benchmark/gabarito/<volume>.json` (retomável,
+salva a cada tecla). O gabarito referencia os recortes pelo nome — as páginas
+em si nunca entram no repositório.
