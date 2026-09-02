@@ -14,7 +14,7 @@ from mangawhisperer.models import ContextualizedBlock
 
 class TestStylePresets:
     def test_all_presets_exist(self) -> None:
-        assert set(STYLES) == {"neutro", "sobrio", "sombrio", "epico"}
+        assert set(STYLES) == {"neutro", "equilibrado", "sobrio", "sombrio", "epico"}
 
     def test_get_style_is_case_insensitive(self) -> None:
         assert get_style("  Sombrio ").name == "sombrio"

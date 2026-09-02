@@ -30,6 +30,21 @@ STYLES: dict[str, NarrationStyle] = {
         label="Pragmático / Neutro",
         prompt_addendum="",
     ),
+    "equilibrado": NarrationStyle(
+        name="equilibrado",
+        label="Equilibrado / Audiodescrição com atmosfera desenhada",
+        prompt_addendum="""
+
+Narration style directive (EQUILIBRADO): audio description that stays true to
+the panel but is not bare. One action block per panel (two when the action
+changes), up to about 22 words each. Besides who/where/what, you MAY add one
+detail that is actually drawn — lighting, weather, posture, a facial
+expression named plainly ("olhos arregalados"), the state of the place.
+Still forbidden: sounds, smells, thoughts, feelings or dangers that are not
+drawn; metaphors; stacked adjectives; restating the dialogue.""",
+        tts_speed=0.98,
+        gap_ms=450,
+    ),
     "sobrio": NarrationStyle(
         name="sobrio",
         label="Sóbrio / Audiodescrição",
