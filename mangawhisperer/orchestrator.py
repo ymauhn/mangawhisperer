@@ -22,6 +22,8 @@ from typing import Callable
 import numpy as np
 from pydantic import TypeAdapter
 
+from mangawhisperer.engines.narration import auto_tag_sfx, plan_narration
+from mangawhisperer.engines.text_cleaning import clean_ocr_text, is_ocr_junk
 from mangawhisperer.interfaces import (
     AudioStitcher,
     Image,
@@ -240,24 +242,12 @@ class MangaAudioOrchestrator:
         }
 
     def _auto_tag_sfx(self, blocks: list[ContextualizedBlock]) -> list[ContextualizedBlock]:
-        """Keyword-based safety net: if the scriptwriter left blocks
-        without effects, tag obvious action beats. The per-panel cap
-        follows ``sfx_intensity``; level 3 also considers dialogue."""
-        from mangawhisperer.engines.sfx import suggest_tag  # noqa: PLC0415
-
-        cap = self._sfx_intensity  # 1..3 (0 disables the library entirely)
-        available = set(self._sfx_library.tags())
-        used = sum(1 for b in blocks if b.sfx)
-        tagged: list[ContextualizedBlock] = []
-        for block in blocks:
-            eligible = not block.is_speech or self._sfx_intensity >= 3
-            if used < cap and block.sfx is None and eligible:
-                tag = suggest_tag(block.text, available)
-                if tag is not None:
-                    logger.info("Auto-tagged SFX %r for: %.60s", tag, block.text)
-                    block = block.model_copy(update={"sfx": tag})
-                    used += 1
-            tagged.append(block)
+        """Keyword safety net for effects the scriptwriter skipped (rules
+        live in :func:`mangawhisperer.engines.narration.auto_tag_sfx`)."""
+        tagged = auto_tag_sfx(blocks, set(self._sfx_library.tags()), self._sfx_intensity)
+        for before, after in zip(blocks, tagged):
+            if before.sfx is None and after.sfx:
+                logger.info("Auto-tagged SFX %r for: %.60s", after.sfx, after.text)
         return tagged
 
     def _sfx_segment(
@@ -353,54 +343,49 @@ class MangaAudioOrchestrator:
         return panels
 
     def _read_bubbles(self, panel_image: Image) -> list[SpeechBubble]:
-        """Detect and OCR every bubble in one panel, in reading order."""
+        """Detect and OCR every bubble in one panel, in reading order.
+
+        OCR junk (stray glyphs, page numbers, symbol soup) is dropped
+        here, before any token is spent on it downstream.
+        """
         panel_h, panel_w = panel_image.shape[:2]
         bubbles: list[SpeechBubble] = []
         for bubble_box in self._layout_parser.extract_bubbles(panel_image):
             x0, y0, x1, y1 = bubble_box.to_absolute(panel_w, panel_h)
-            text = self._ocr_engine.recognize(panel_image[y0:y1, x0:x1])
+            text = clean_ocr_text(self._ocr_engine.recognize(panel_image[y0:y1, x0:x1]))
+            if is_ocr_junk(text):
+                logger.info("Dropped OCR junk: %r", text)  # visible: a lost line must be diagnosable
+                continue
             bubbles.append(SpeechBubble(text=text, bbox=bubble_box))
         return bubbles
 
     def _synthesize_audio(self, panels: list[PanelData], workspace: Path) -> list[AudioSegmentMetadata]:
-        """TTS every block in narration order, interleaving any sound
-        effects the scriptwriter requested (``block.sfx``).
+        """Render the narration plan: TTS for speech and speaker
+        announcements, library lookup for sound effects. What goes where
+        is decided by :func:`mangawhisperer.engines.narration.plan_narration`.
 
         Persists segment audio under ``audio/`` and the metadata
         checkpoint at ``audio/segments.json``.
         """
+        plan = plan_narration(
+            panels,
+            announce_speakers=self._announce_speakers,
+            sfx_enabled=self._sfx_library is not None,
+        )
         segments: list[AudioSegmentMetadata] = []
-        block_index = 0
-        last_speaker: str | None = None
-        for panel in panels:
-            for block in panel.blocks:
-                sfx_segment = self._sfx_segment(block.sfx, block_index, seed=block.text)
-                if sfx_segment is not None:
-                    segments.append(sfx_segment)
-                    block_index += 1
-
-                if (
-                    self._announce_speakers
-                    and block.is_speech
-                    and block.speaker_id != "Narrator"
-                    and block.speaker_id != last_speaker
-                ):
-                    announcement = ContextualizedBlock(
-                        text=block.speaker_id, speaker_id="Narrator", is_speech=False
-                    )
-                    intro_path = workspace / "audio" / f"seg{block_index:05d}.wav"
-                    intro = self._tts_engine.synthesize(announcement, intro_path)
-                    segments.append(intro.model_copy(update={"block_index": block_index}))
-                    block_index += 1
-                if block.is_speech:
-                    last_speaker = block.speaker_id
-
+        for item in plan:
+            # The global narration index is the orchestrator's to assign
+            # (engines can't see interleaved SFX/announcement segments).
+            block_index = len(segments)
+            if item.kind == "sfx":
+                segment = self._sfx_segment(item.sfx_tag, block_index, seed=item.seed)
+                if segment is None:
+                    continue
+            else:
                 segment_path = workspace / "audio" / f"seg{block_index:05d}.wav"
-                metadata = self._tts_engine.synthesize(block, segment_path)
-                # The global narration index is the orchestrator's to assign
-                # (engines can't see interleaved SFX/announcement segments).
-                segments.append(metadata.model_copy(update={"block_index": block_index}))
-                block_index += 1
+                metadata = self._tts_engine.synthesize(item.block, segment_path)
+                segment = metadata.model_copy(update={"block_index": block_index})
+            segments.append(segment)
 
         self._write_checkpoint(workspace / "audio" / "segments.json",
                                _SEGMENTS_ADAPTER.dump_json(segments, indent=2))
