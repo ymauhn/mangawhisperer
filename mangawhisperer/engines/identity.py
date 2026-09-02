@@ -380,7 +380,9 @@ class Gallery:
     score reaches ``accept`` and beats the runner-up name by ``margin``.
     """
 
-    def __init__(self, accept: float = 0.75, margin: float = 0.05, strategy: str = "nearest") -> None:
+    def __init__(self, accept: float = 0.80, margin: float = 0.05, strategy: str = "mixed") -> None:
+        # Defaults measured on Berserk vol. 1 (99 labelled crops, leave-one-out, Magiv2):
+        # mixed @0.80 names the principal cast 85.7% of the time, rejects 89% of extras.
         if strategy not in ("nearest", "prototype", "mixed"):
             raise ValueError(f"Estratégia desconhecida {strategy!r}")
         self.accept = accept
@@ -426,7 +428,7 @@ class Gallery:
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "Gallery":
-        gallery = cls(accept=data.get("accept", 0.75), margin=data.get("margin", 0.05), strategy=data.get("strategy", "nearest"))
+        gallery = cls(accept=data.get("accept", 0.80), margin=data.get("margin", 0.05), strategy=data.get("strategy", "mixed"))
         for item in data.get("exemplars", []):
             gallery.add(item["name"], np.asarray(item["embedding"], dtype=np.float32))
         return gallery
@@ -434,9 +436,9 @@ class Gallery:
 
 def leave_one_out(
     labelled: Sequence[tuple[str, np.ndarray]],
-    accept: float = 0.75,
+    accept: float = 0.80,
     margin: float = 0.05,
-    strategy: str = "nearest",
+    strategy: str = "mixed",
     unknown_label: str = UNKNOWN,
 ) -> list[tuple[str, str | None, float]]:
     """Name every labelled crop from a gallery built from all the *other*

@@ -65,3 +65,12 @@ def test_sweep_and_report_render():
     summary = summarize_naming(leave_one_out(labelled, accept=0.5, margin=0.05))
     report = report_markdown("vol", "fake", summary, rows, "nearest", 0.05)
     assert "Acurácia de nomeação: 100.0%" in report and "| Guts | 2 | 2 | 0 |" in report and "| 1.00 |" in report
+
+
+def test_labelled_crops_can_fold_interchangeable_extras_into_unknown():
+    gabarito = {"characters": {
+        "a": {"label": "Guts", "box": [0, 0, 1, 1]}, "b": {"label": "Guts", "box": [0, 0, 1, 1]},
+        "c": {"label": "Soldado", "box": [0, 0, 1, 1]}, "d": {"label": "Mercenário", "box": [0, 0, 1, 1]},
+    }}
+    kept = labelled_crops(gabarito, min_per_name=2, treat_as_unknown=["soldado", " Mercenário "])
+    assert [e["label"] for e in kept] == ["Guts", "Guts", UNKNOWN, UNKNOWN]

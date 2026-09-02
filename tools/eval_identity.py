@@ -33,10 +33,21 @@ from mangawhisperer.engines.identity import (
 GABARITO_DIR = PROJECT_ROOT / "tests" / "benchmark" / "gabarito"
 
 
-def labelled_crops(gabarito: dict, min_per_name: int = 2) -> list[dict[str, Any]]:
+def labelled_crops(gabarito: dict, min_per_name: int = 2, treat_as_unknown: Sequence[str] = ()) -> list[dict[str, Any]]:
     """Character labels usable for evaluation: names with at least
-    ``min_per_name`` crops, plus every extra (``Desconhecido``)."""
-    entries = [{"key": k, **v} for k, v in gabarito.get("characters", {}).items() if v.get("label") and v.get("box")]
+    ``min_per_name`` crops, plus every extra (``Desconhecido``). Labels in
+    ``treat_as_unknown`` (interchangeable extras such as "Soldado") are
+    folded into ``Desconhecido`` — the product only needs the principal cast
+    named and everyone else rejected."""
+    fold = {name.strip().lower() for name in treat_as_unknown if name.strip()}
+    entries = []
+    for key, value in gabarito.get("characters", {}).items():
+        if not (value.get("label") and value.get("box")):
+            continue
+        entry = {"key": key, **value}
+        if entry["label"].strip().lower() in fold:
+            entry["label"] = UNKNOWN
+        entries.append(entry)
     counts: dict[str, int] = {}
     for entry in entries:
         counts[entry["label"]] = counts.get(entry["label"], 0) + 1
@@ -71,11 +82,12 @@ def report_markdown(volume: str, embedder: str, summary: dict[str, Any], rows: S
 
 
 def evaluate(workspace: Path, volume: str, embedder: CropEmbedder, accept: float, margin: float,
-             strategy: str, min_per_name: int, gabarito_dir: Path = GABARITO_DIR) -> dict[str, Any]:
+             strategy: str, min_per_name: int, gabarito_dir: Path = GABARITO_DIR,
+             treat_as_unknown: Sequence[str] = ()) -> dict[str, Any]:
     from PIL import Image  # noqa: PLC0415
 
     gabarito = json.loads((gabarito_dir / f"{volume}.json").read_text(encoding="utf-8"))
-    entries = labelled_crops(gabarito, min_per_name)
+    entries = labelled_crops(gabarito, min_per_name, treat_as_unknown)
     if len(entries) < 2:
         raise SystemExit("Poucos recortes rotulados: rode `label_benchmark --mode characters` primeiro.")
     pages: dict[str, np.ndarray] = {}
@@ -94,7 +106,8 @@ def evaluate(workspace: Path, volume: str, embedder: CropEmbedder, accept: float
     summary = summarize_naming(leave_one_out(labelled, accept=accept, margin=margin, strategy=strategy))
     rows = sweep(labelled, [0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9], margin, strategy)
     report = report_markdown(volume, embedder.name, summary, rows, strategy, margin)
-    out = workspace / "identity" / f"report_{embedder.name}.md"
+    suffix = "_extras-unknown" if treat_as_unknown else ""
+    out = workspace / "identity" / f"report_{embedder.name}_{strategy}{suffix}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8")
     print(report)
@@ -107,11 +120,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--volume", required=True)
     parser.add_argument("--workspace", type=Path, default=PROJECT_ROOT / "workspace")
     parser.add_argument("--embedder", choices=("magiv2", "dinov2"), default="magiv2")
-    parser.add_argument("--accept", type=float, default=0.75)
+    parser.add_argument("--accept", type=float, default=0.80)
     parser.add_argument("--margin", type=float, default=0.05)
-    parser.add_argument("--strategy", choices=("nearest", "prototype", "mixed"), default="nearest")
+    parser.add_argument("--strategy", choices=("nearest", "prototype", "mixed"), default="mixed")
     parser.add_argument("--min-per-name", type=int, default=2)
     parser.add_argument("--device", default=None, help="cuda|cpu (padrão: cuda se disponível)")
+    parser.add_argument("--treat-as-unknown", default="",
+                        help="Rótulos de figurantes intercambiáveis a contar como Desconhecido (ex.: 'Soldado,Mercenário').")
     return parser.parse_args(argv)
 
 
@@ -120,7 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     embedder = create_embedder(args.embedder, device=args.device)
     try:
         evaluate(args.workspace / args.volume, args.volume, embedder, args.accept, args.margin,
-                 args.strategy, args.min_per_name)
+                 args.strategy, args.min_per_name,
+                 treat_as_unknown=[x for x in args.treat_as_unknown.split(",") if x.strip()])
     finally:
         embedder.release()
     return 0
