@@ -60,6 +60,11 @@ tts-edge = [
 reference = [
     "faster-whisper>=1.1",  # tools/transcribe_reference.py (referencia de narracao humana, uso local)
 ]
+identity = [
+    "onnxruntime>=1.17",  # detector manga109_yolo (ONNX) — ticket #22
+    "safetensors>=0.4",
+    "huggingface_hub>=0.23",
+]
 audio-tagging = [
     "transformers>=4.49,<5",  # CLAP zero-shot pipeline (laion/larger_clap_general)
 ]

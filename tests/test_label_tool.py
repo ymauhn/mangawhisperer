@@ -12,7 +12,9 @@ from tools.label_benchmark import (
     JUNK_LABEL,
     NARRATOR_LABEL,
     Gabarito,
+    UNKNOWN_LABEL,
     ask_text,
+    character_items,
     LabelItem,
     first_pdf_page,
     hotkey_legend,
@@ -134,3 +136,30 @@ def test_ask_text_falls_back_to_the_console_without_a_tk_window():
         raise EOFError
 
     assert ask_text("Nome:", window=None, fallback=no_console) == ""
+
+
+def test_character_items_come_from_the_detections_file(tmp_path):
+    (tmp_path / "pages").mkdir()
+    (tmp_path / "identity").mkdir()
+    (tmp_path / "pages" / "page_031.png").write_bytes(b"")
+    (tmp_path / "identity" / "detections.json").write_text(json.dumps({
+        "detector": "manga109-yolo:test",
+        "pages": {"page_031": {"width": 100, "height": 200, "detections": [
+            {"label": "body", "confidence": 0.9, "box": [10, 10, 50, 90]},
+            {"label": "face", "confidence": 0.8, "box": [20, 15, 40, 35]},
+            {"label": "body", "confidence": 0.6, "box": [60, 100, 95, 190]},
+        ]}, "page_099": {"width": 1, "height": 1, "detections": [{"label": "body", "confidence": 0.5, "box": [0, 0, 1, 1]}]}},
+    }), encoding="utf-8")
+
+    items = character_items(tmp_path)
+
+    assert [i.key for i in items] == ["page_031/body00", "page_031/body01"]  # faces skipped, missing page skipped
+    assert items[0].box == (10, 10, 50, 90) and items[0].confidence == 0.9
+    assert "corpo 1/2" in items[0].prompt
+    with pytest.raises(FileNotFoundError):
+        character_items(tmp_path / "elsewhere")
+
+
+def test_characters_legend_and_gabarito_section():
+    assert "0=Desconhecido" in hotkey_legend("characters", CAST) and "x=não é personagem" in hotkey_legend("characters", CAST)
+    assert UNKNOWN_LABEL == "Desconhecido"

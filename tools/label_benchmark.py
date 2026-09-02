@@ -31,8 +31,9 @@ from mangawhisperer.reporting import load_script
 GABARITO_DIR = PROJECT_ROOT / "tests" / "benchmark" / "gabarito"
 DEFAULT_CAST = ("Guts", "Griffith", "Casca", "Puck", "Judeau", "Corkus", "Zodd", "Criatura")
 NARRATOR_LABEL = "Narrador"
+UNKNOWN_LABEL = "Desconhecido"  # characters mode: an extra, not a cast member
 JUNK_LABEL = "__lixo__"
-MODES = ("speakers", "panels")
+MODES = ("speakers", "panels", "characters")
 PANEL_VERDICTS = {"y": "ok", "u": "under", "v": "over", "n": "wrong"}
 SKIP_KEY = "s"
 QUIT_KEY = "q"
@@ -51,6 +52,8 @@ class LabelItem:
     prompt: str
     predicted: str
     text: str = ""
+    box: tuple[int, int, int, int] | None = None  # characters mode: page-pixel body box
+    confidence: float = 0.0
 
 
 def label_for_key(key: str, cast: Sequence[str]) -> str | None:
@@ -69,6 +72,9 @@ def hotkey_legend(mode: str, cast: Sequence[str]) -> str:
     if mode == "speakers":
         keys = [f"{i + 1}={name}" for i, name in enumerate(cast[:9])]
         keys += [f"0={NARRATOR_LABEL}", f"{OTHER_KEY}=outro", f"{JUNK_KEY}=lixo"]
+    elif mode == "characters":
+        keys = [f"{i + 1}={name}" for i, name in enumerate(cast[:9])]
+        keys += [f"0={UNKNOWN_LABEL}", f"{OTHER_KEY}=outro", f"{JUNK_KEY}=não é personagem"]
     else:
         keys = [f"{k}={v}" for k, v in PANEL_VERDICTS.items()] + [f"{COUNT_KEY}=contagem"]
     keys += [f"{SKIP_KEY}=pular", f"{QUIT_KEY}=sair"]
@@ -81,7 +87,7 @@ class Gabarito:
     def __init__(self, path: Path, volume: str) -> None:
         self.path = path
         self.volume = volume
-        self.data: dict = {"volume": volume, "speakers": {}, "panels": {}}
+        self.data: dict = {"volume": volume, "speakers": {}, "panels": {}, "characters": {}}
         if path.is_file():
             stored = json.loads(path.read_text(encoding="utf-8"))
             for mode in MODES:
@@ -195,6 +201,34 @@ def page_items(workspace: Path) -> list[LabelItem]:
     return items
 
 
+def character_items(workspace: Path) -> list[LabelItem]:
+    """One item per detected body (``identity/detections.json``, written
+    by ``tools.detect_characters``), keyed ``page_031/body02``."""
+    detections_path = workspace / "identity" / "detections.json"
+    if not detections_path.is_file():
+        raise FileNotFoundError(
+            f"Detecções não encontradas: {detections_path} — rode `python -m tools.detect_characters` primeiro."
+        )
+    data = json.loads(detections_path.read_text(encoding="utf-8"))
+    items: list[LabelItem] = []
+    for stem, page in data.get("pages", {}).items():
+        image_path = _page_file(workspace, stem)
+        if image_path is None:
+            continue
+        bodies = [d for d in page.get("detections", []) if d.get("label") == "body"]
+        for index, detection in enumerate(bodies):
+            box = tuple(int(v) for v in detection["box"])
+            items.append(LabelItem(
+                key=f"{stem}/body{index:02d}",
+                image_path=image_path,
+                prompt=f"Quem é este personagem? ({stem}, corpo {index + 1}/{len(bodies)}, conf {float(detection['confidence']):.2f})",
+                predicted="",
+                box=box,
+                confidence=float(detection["confidence"]),
+            ))
+    return items
+
+
 def load_image(path: Path) -> np.ndarray:
     if path.suffix.lower() == ".npy":
         return np.load(path)
@@ -235,7 +269,12 @@ def run_session(mode: str, items: Sequence[LabelItem], gabarito: Gabarito, cast:
     def show() -> None:
         ax.clear()
         item = items[state["index"]]
-        ax.imshow(load_image(item.image_path), cmap="gray")
+        image = load_image(item.image_path)
+        if item.box is not None:  # characters mode: the body crop with some context
+            from mangawhisperer.engines.identity import crop_with_margin  # noqa: PLC0415
+
+            image = crop_with_margin(image, item.box, margin=0.35)
+        ax.imshow(image, cmap="gray")
         ax.set_axis_off()
         ax.set_title(
             f"[{state['index'] + 1}/{len(items)}] {item.prompt}\n"
@@ -267,6 +306,15 @@ def run_session(mode: str, items: Sequence[LabelItem], gabarito: Gabarito, cast:
             if label is None:
                 return
             gabarito.record(mode, item, label=label)
+        elif mode == "characters":
+            label = label_for_key(key, cast)
+            if key == "0":
+                label = UNKNOWN_LABEL
+            elif key == OTHER_KEY:
+                label = ask_text("Nome do personagem:", window) or None
+            if label is None:
+                return
+            gabarito.record(mode, item, label=label, box=list(item.box or ()), confidence=item.confidence)
         else:
             if key == COUNT_KEY:
                 raw = ask_text("Contagem real de painéis:", window)
@@ -305,7 +353,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     cast = tuple(name.strip() for name in args.cast.split(",") if name.strip())
     workspace = args.workspace / args.volume
-    items = speaker_items(workspace) if args.mode == "speakers" else page_items(workspace)
+    builders = {"speakers": speaker_items, "panels": page_items, "characters": character_items}
+    items = builders[args.mode](workspace)
     gabarito = Gabarito(args.gabarito_dir / f"{args.volume}.json", args.volume)
     pending = gabarito.pending(args.mode, items)
     print(f"{len(items)} itens · {len(items) - len(pending)} já rotulados · {len(pending)} pendentes")
