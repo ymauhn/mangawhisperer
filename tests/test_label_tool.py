@@ -12,6 +12,7 @@ from tools.label_benchmark import (
     JUNK_LABEL,
     NARRATOR_LABEL,
     Gabarito,
+    ask_text,
     LabelItem,
     first_pdf_page,
     hotkey_legend,
@@ -124,3 +125,12 @@ def test_page_items_count_panels_from_the_checkpoint_not_the_directory(tmp_path)
 
     assert [(i.key, i.predicted) for i in items] == [("page_008", "2"), ("page_009", "1")]
     assert items[0].image_path == tmp_path / "pages" / "page_008.png"
+
+
+def test_ask_text_falls_back_to_the_console_without_a_tk_window():
+    assert ask_text("Nome:", window=None, fallback=lambda prompt: "  Guts ") == "Guts"
+
+    def no_console(prompt):
+        raise EOFError
+
+    assert ask_text("Nome:", window=None, fallback=no_console) == ""

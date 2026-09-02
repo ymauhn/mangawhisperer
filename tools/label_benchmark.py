@@ -21,7 +21,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 
@@ -204,6 +204,24 @@ def load_image(path: Path) -> np.ndarray:
         return np.asarray(img.convert("RGB"))
 
 
+def ask_text(prompt: str, window: object = None, fallback: Callable[[str], str] = input) -> str:
+    """Ask the labeller for free text: a Tk dialog on top of the figure
+    window when the backend is Tk (works without a console — the tool
+    may be launched from a GUI), else the console ``input``."""
+    try:
+        from tkinter import simpledialog  # noqa: PLC0415 — only with a Tk backend
+
+        if window is not None and hasattr(window, "tk"):
+            answer = simpledialog.askstring("Gabarito", prompt, parent=window)
+            return (answer or "").strip()
+    except Exception:  # no Tk (headless backend): fall through to the console
+        pass
+    try:
+        return fallback(prompt + " ").strip()
+    except EOFError:  # no console at all
+        return ""
+
+
 def run_session(mode: str, items: Sequence[LabelItem], gabarito: Gabarito, cast: Sequence[str]) -> int:
     """Interactive matplotlib loop; returns how many labels were recorded."""
     import matplotlib.pyplot as plt  # noqa: PLC0415 — UI dependency only here
@@ -212,6 +230,7 @@ def run_session(mode: str, items: Sequence[LabelItem], gabarito: Gabarito, cast:
     fig, ax = plt.subplots(figsize=(9, 10))
     fig.canvas.manager.set_window_title(f"MangaWhisperer · gabarito · {gabarito.volume} · {mode}")
     legend = hotkey_legend(mode, cast)
+    window = getattr(fig.canvas.manager, "window", None)
 
     def show() -> None:
         ax.clear()
@@ -244,13 +263,13 @@ def run_session(mode: str, items: Sequence[LabelItem], gabarito: Gabarito, cast:
         if mode == "speakers":
             label = label_for_key(key, cast)
             if key == OTHER_KEY:
-                label = input("Nome do personagem: ").strip() or None
+                label = ask_text("Nome do personagem:", window) or None
             if label is None:
                 return
             gabarito.record(mode, item, label=label)
         else:
             if key == COUNT_KEY:
-                raw = input("Contagem real de painéis: ").strip()
+                raw = ask_text("Contagem real de painéis:", window)
                 if not raw.isdigit():
                     return
                 true_count = int(raw)
