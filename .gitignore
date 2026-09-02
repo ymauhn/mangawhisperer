@@ -5,6 +5,8 @@ workspace/
 workspace_ui/
 workspace_full/
 *.pdf
+# Gabaritos guardam o texto OCR dos balões (falas da obra) — ficam locais.
+tests/benchmark/gabarito/*.json
 
 # ── Ambiente e caches ──────────────────────────────────────────────
 .venv/
