@@ -20,6 +20,7 @@ import wave
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from mangawhisperer.constants import AUDIO_SAMPLE_RATE
 from mangawhisperer.interfaces import MultiSpeakerTTSEngine
 from mangawhisperer.models import AudioSegmentMetadata, ContextualizedBlock
 
@@ -77,6 +78,29 @@ def normalize_for_tts(text: str) -> str:
     return cleaned or text
 
 
+def is_pronounceable(text: str) -> bool:
+    """False for blocks with nothing to voice — a silent "......" bubble,
+    a lone "!" — which the TTS models turn into zero-length audio (XTTS
+    even crashes computing its real-time factor). Such blocks become a
+    short beat of silence instead."""
+    return any(char.isalnum() for char in normalize_for_tts(text))
+
+
+SILENT_BEAT_MS = 450
+"""Pause rendered for an unpronounceable block: the reader still "hears"
+that the character stayed silent."""
+
+
+def write_silence(path: Path, duration_ms: int, sample_rate: int = AUDIO_SAMPLE_RATE) -> None:
+    """Write ``duration_ms`` of 16-bit mono silence as a valid WAV."""
+    frames = int(sample_rate * duration_ms / 1000)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        wav.writeframes(b"\x00\x00" * frames)
+
+
 class XTTSEngine(MultiSpeakerTTSEngine):
     """Coqui XTTSv2 synthesis with consistent per-character voices.
 
@@ -130,15 +154,20 @@ class XTTSEngine(MultiSpeakerTTSEngine):
         return f"xtts:{self.MODEL_NAME}:{self._language}:speed={self._speed}:{extras or 'default'}"
 
     def synthesize(self, block: ContextualizedBlock, output_path: Path) -> AudioSegmentMetadata:
-        """Render one block to WAV with the speaker's assigned voice."""
-        self._get_synthesizer().tts_to_file(
-            text=normalize_for_tts(block.text),
-            speaker=self.voice_for(block.speaker_id),
-            language=self._language,
-            speed=self._speed,
-            file_path=str(output_path),
-            **self._extra_kwargs,
-        )
+        """Render one block to WAV with the speaker's assigned voice; a
+        block with nothing to voice becomes a short beat of silence."""
+        if is_pronounceable(block.text):
+            self._get_synthesizer().tts_to_file(
+                text=normalize_for_tts(block.text),
+                speaker=self.voice_for(block.speaker_id),
+                language=self._language,
+                speed=self._speed,
+                file_path=str(output_path),
+                **self._extra_kwargs,
+            )
+        else:
+            logger.info("Bloco sem texto pronunciável (%r): pausa de %d ms", block.text, SILENT_BEAT_MS)
+            write_silence(output_path, SILENT_BEAT_MS, AUDIO_SAMPLE_RATE)
         with wave.open(str(output_path), "rb") as wav:
             duration_ms = round(wav.getnframes() * 1000 / wav.getframerate())
 

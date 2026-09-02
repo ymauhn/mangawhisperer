@@ -23,7 +23,7 @@ import numpy as np
 
 from mangawhisperer.constants import AUDIO_SAMPLE_RATE as TARGET_RATE
 from mangawhisperer.engines.sfx import read_audio, resample_audio
-from mangawhisperer.engines.tts import normalize_for_tts
+from mangawhisperer.engines.tts import SILENT_BEAT_MS, is_pronounceable, normalize_for_tts, write_silence
 from mangawhisperer.interfaces import MultiSpeakerTTSEngine
 from mangawhisperer.models import AudioSegmentMetadata, ContextualizedBlock
 
@@ -94,7 +94,17 @@ class EdgeTTSEngine(MultiSpeakerTTSEngine):
             self._speed = speed
 
     def synthesize(self, block: ContextualizedBlock, output_path: Path) -> AudioSegmentMetadata:
-        """Render one block via Edge and convert to pipeline WAV."""
+        """Render one block via Edge and convert to pipeline WAV; a block
+        with nothing to voice becomes a short beat of silence."""
+        if not is_pronounceable(block.text):
+            logger.info("Bloco sem texto pronunciável (%r): pausa de %d ms", block.text, SILENT_BEAT_MS)
+            write_silence(output_path, SILENT_BEAT_MS, TARGET_RATE)
+            metadata = AudioSegmentMetadata(
+                file_path=output_path, speaker_id=block.speaker_id,
+                duration_ms=SILENT_BEAT_MS, block_index=self._block_index,
+            )
+            self._block_index += 1
+            return metadata
         voice, rate, pitch = self.voice_for(block.speaker_id)
         rate += round((self._speed - 1.0) * 100)
         temp_mp3 = output_path.with_suffix(".edge.mp3")

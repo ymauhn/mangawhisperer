@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mangawhisperer.engines.tts import DEFAULT_CAST_VOICES, FALLBACK_VOICE_POOL, XTTSEngine
+from mangawhisperer.engines.tts import SILENT_BEAT_MS, is_pronounceable, DEFAULT_CAST_VOICES, FALLBACK_VOICE_POOL, XTTSEngine
 from mangawhisperer.models import ContextualizedBlock
 
 SAMPLE_RATE = 24000  # XTTSv2 output rate
@@ -114,3 +114,24 @@ class TestXTTSEngine:
         assert call["speed"] == 1.1
         assert call["temperature"] == 0.75
         assert call["repetition_penalty"] == 4.0
+
+
+class TestUnpronounceableBlocks:
+    def test_silent_bubble_becomes_a_beat_of_silence_without_calling_the_model(self, tmp_path: Path) -> None:
+        engine, fake = make_engine()
+        block = ContextualizedBlock(text="......", speaker_id="Guts", is_speech=True)
+
+        metadata = engine.synthesize(block, tmp_path / "seg.wav")
+
+        assert fake.calls == []  # XTTS would render zero-length audio and crash on its RTF log
+        assert metadata.duration_ms == SILENT_BEAT_MS
+        with wave.open(str(tmp_path / "seg.wav"), "rb") as wav:
+            assert wav.getnframes() == int(SAMPLE_RATE * SILENT_BEAT_MS / 1000)
+
+    def test_pronounceable_detection(self) -> None:
+        assert not is_pronounceable("......")
+        assert not is_pronounceable("!")
+        assert not is_pronounceable("?!")
+        assert is_pronounceable("Hm")
+        assert is_pronounceable("3 dias")
+        assert is_pronounceable("Já chega!")
